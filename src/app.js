@@ -27,6 +27,8 @@ const sorters = {
   'date-asc': (a, b) => a.date.localeCompare(b.date),
   author: (a, b) => a.creator.localeCompare(b.creator, 'fr') || b.date.localeCompare(a.date),
   title: (a, b) => a.title.localeCompare(b.title, 'fr'),
+  'size-desc': (a, b) => b.size - a.size,
+  'size-asc': (a, b) => a.size - b.size,
   'plays-desc': (a, b) => b.plays - a.plays || b.date.localeCompare(a.date),
   'plays-asc': (a, b) => a.plays - b.plays || b.date.localeCompare(a.date),
 };
@@ -84,15 +86,10 @@ function fillVideoList(ul, list, { withCheckbox }) {
 function refresh() {
   const q = $('q').value.trim().toLowerCase();
   const au = $('author').value;
-  const from = $('from').value;
-  const to = $('to').value;
   view = videos
     .filter((v) => {
       if (au && v.creator !== au) return false;
       if (q && !(v.title + ' ' + v.creator).toLowerCase().includes(q)) return false;
-      const day = v.date.slice(0, 10);
-      if (from && day < from) return false;
-      if (to && day > to) return false;
       if ($('onlyChecked').checked && !checked.has(v.id)) return false;
       return true;
     })
@@ -286,7 +283,7 @@ async function reload() {
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-  ['q', 'author', 'sort', 'from', 'to', 'onlyChecked'].forEach((id) => $(id).addEventListener('input', refresh));
+  ['q', 'author', 'sort', 'onlyChecked'].forEach((id) => $(id).addEventListener('input', refresh));
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();

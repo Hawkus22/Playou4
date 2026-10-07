@@ -5,7 +5,7 @@ Lecteur de vidéos mp4, compagnon de [You4](../You4) : lit les vidéos télécha
 
 ## Fonctions
 
-- **Bibliothèque** : tri (date, auteur, titre, nombre de lectures), filtres (recherche, auteur, plage de dates), cases à cocher.
+- **Bibliothèque** : tri (date, auteur, titre, taille, nombre de lectures), filtres (recherche, auteur), cases à cocher.
 - **Playlists** : enregistrer la sélection, lire, mettre à jour, supprimer, et **déplacer la playlist** vers un autre dossier ou disque.
 - **Compteur de lectures** par vidéo (seuil réglable, 80 % par défaut), conservé après déplacement : les vidéos sont identifiées par une empreinte de leur contenu, pas par leur chemin.
 - **Réglages** : dossiers analysés (sous-dossiers inclus), emplacement du fichier de playlists (ouvrir un autre fichier / le déplacer).
