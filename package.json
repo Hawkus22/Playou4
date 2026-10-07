@@ -1,0 +1,65 @@
+{
+  "name": "playou4",
+  "productName": "Playou4",
+  "version": "0.1.0",
+  "description": "Lecteur de vidéos mp4 avec tri, filtres et playlists - Hawkus Corp.",
+  "author": "Vachon Marc-Olivier",
+  "license": "UNLICENSED",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/start.js .",
+    "icon": "node scripts/start.js scripts/make-icon.js",
+    "dist": "electron-builder",
+    "release": "node scripts/release.js"
+  },
+  "build": {
+    "appId": "fr.hawkuscorp.playou4",
+    "productName": "Playou4",
+    "copyright": "Copyright © 2026 Hawkus Corp. — Vachon Marc-Olivier",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Playou4",
+      "artifactName": "Playou4-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false,
+      "language": "1036"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Hawkus22",
+        "repo": "Playou4"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

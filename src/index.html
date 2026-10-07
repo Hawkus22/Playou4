@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src file:; style-src 'self' 'unsafe-inline'">
+<title>Playou4</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<aside id="side">
+  <nav class="tabs">
+    <button data-tab="library" class="active">Bibliothèque</button>
+    <button data-tab="playlists">Playlists</button>
+    <button data-tab="settings">Réglages</button>
+    <button data-tab="about">À propos</button>
+  </nav>
+  <button id="updateBanner" class="primary" hidden></button>
+
+  <section id="tab-library" class="active">
+    <div class="tools">
+      <input id="q" type="search" placeholder="Rechercher titre / auteur…">
+      <select id="author"></select>
+      <select id="sort">
+        <option value="date-desc">Date ↓ (récent)</option>
+        <option value="date-asc">Date ↑ (ancien)</option>
+        <option value="author">Auteur A→Z</option>
+        <option value="title">Titre A→Z</option>
+        <option value="plays-desc">Plus lues</option>
+        <option value="plays-asc">Moins lues / jamais lues</option>
+      </select>
+      <input id="from" type="date" title="Depuis"><input id="to" type="date" title="Jusqu'au">
+      <div class="row">
+        <button id="selAll">Tout cocher</button>
+        <button id="selNone">Tout décocher</button>
+        <label><input type="checkbox" id="onlyChecked"> Cochées</label>
+      </div>
+      <div id="count"></div>
+    </div>
+    <ul id="list" class="vlist"></ul>
+    <div class="foot">
+      <div id="selInfo"></div>
+      <div class="row">
+        <input id="plName" placeholder="Nom de la playlist">
+        <button id="plSave" class="primary">Enregistrer la playlist</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="tab-playlists">
+    <ul id="plList"></ul>
+    <div id="plDetail" hidden>
+      <div class="detail-head">
+        <div id="plTitle"></div>
+        <div id="plInfo"></div>
+      </div>
+      <div class="row actions">
+        <button id="plPlay" class="primary">▶ Lire</button>
+        <button id="plLoad">Charger dans la sélection</button>
+        <button id="plUpdate">Mettre à jour avec la sélection</button>
+        <button id="plMove">Déplacer la playlist…</button>
+        <button id="plDel" class="danger">Supprimer</button>
+      </div>
+      <ul id="plVideos" class="vlist"></ul>
+    </div>
+    <div id="plEmpty">Aucune playlist. Coche des vidéos dans la Bibliothèque puis « Enregistrer la playlist ».</div>
+  </section>
+
+  <section id="tab-settings">
+    <div class="pad">
+      <h3>Dossiers analysés</h3>
+      <p class="dim">Tous les .mp4 de ces dossiers (sous-dossiers inclus) apparaissent dans la bibliothèque.</p>
+      <ul id="folderList"></ul>
+      <button id="addFolder" class="primary">Ajouter un dossier…</button>
+      <h3>Fichier de playlists</h3>
+      <p class="dim">Contient les playlists, les compteurs de lecture et la liste des dossiers.</p>
+      <div id="storePath" class="path"></div>
+      <div class="row">
+        <button id="storeOpen">Ouvrir un autre fichier…</button>
+        <button id="storeSaveAs">Déplacer vers…</button>
+        <button id="storeReveal">Afficher</button>
+      </div>
+      <div id="stats" class="dim"></div>
+    </div>
+  </section>
+
+  <section id="tab-about">
+    <div class="pad about">
+      <div class="brand">Playou<span>4</span></div>
+      <p id="aboutVersion" class="dim"></p>
+      <p>Lecteur de vidéos mp4 avec tri, filtres, compteur de lectures et playlists déplaçables.<br>
+        Développé par <strong>Vachon Marc-Olivier</strong> pour <strong>Hawkus Corp.</strong></p>
+      <p>Compagnon de <strong>You4</strong> : lit les vidéos téléchargées par You4, ainsi que tous les mp4 des dossiers choisis.</p>
+      <h3>Mises à jour</h3>
+      <div id="updateStatus" class="path"></div>
+      <div class="row">
+        <button id="updateCheck">Rechercher une mise à jour</button>
+        <button id="updateInstall" class="primary" hidden>Redémarrer et installer</button>
+      </div>
+      <h3>Composants</h3>
+      <ul class="plain"><li>Electron — interface (licence MIT)</li></ul>
+    </div>
+  </section>
+</aside>
+
+<main>
+  <video id="video" controls></video>
+  <div id="bar">
+    <div id="now">Aucune vidéo</div>
+    <div class="row">
+      <button id="prev">⏮</button>
+      <button id="next">⏭</button>
+      <button id="playSel">▶ Lire la sélection</button>
+      <label><input type="checkbox" id="shuffle"> Aléatoire</label>
+      <button id="reveal">Ouvrir le dossier</button>
+    </div>
+  </div>
+</main>
+<div id="progress" hidden>
+  <div id="progLabel"></div>
+  <div class="track"><div id="progFill"></div></div>
+  <div id="progPct"></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
