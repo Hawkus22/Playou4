@@ -11,6 +11,7 @@ let counted = false; // lecture courante déjà comptée
 let checked = new Set();
 let playlists = {};
 let activePl = ''; // playlist affichée dans l'onglet Playlists
+let settings = { wheelSeconds: 10, countPercent: 80 };
 
 try {
   checked = new Set(JSON.parse(localStorage.getItem('checked') || '[]'));
@@ -102,8 +103,11 @@ function refresh() {
 
 function count() {
   const n = videos.filter((v) => checked.has(v.id)).length;
-  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length}`;
-  $('selInfo').textContent = `${n} vidéo(s) cochée(s)`;
+  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)`;
+}
+
+function say(msg) {
+  $('plMsg').textContent = msg;
 }
 
 // ---- Lecture ---------------------------------------------------------------
@@ -161,6 +165,12 @@ function renderPlaylists() {
     };
     ul.append(li);
   }
+  const target = $('plTarget');
+  const prev = target.value;
+  target.textContent = '';
+  target.append(new Option(names.length ? 'Choisir une playlist…' : 'Aucune playlist', ''));
+  for (const name of names) target.append(new Option(`${name} (${plVideos(name).length})`, name));
+  target.value = names.includes(prev) ? prev : activePl;
   $('plEmpty').hidden = names.length > 0;
   $('plDetail').hidden = !activePl;
   if (!activePl) return;
@@ -257,6 +267,9 @@ async function reload() {
   const res = await window.playou4.list();
   videos = res.videos;
   playlists = res.playlists;
+  settings = res.settings;
+  $('wheelSeconds').value = settings.wheelSeconds;
+  $('countPercent').value = settings.countPercent;
   const ids = new Set(videos.map((v) => v.id));
   checked = new Set([...checked].filter((id) => ids.has(id)));
   const au = $('author').value;
@@ -287,14 +300,23 @@ async function init() {
 
   $('plSave').onclick = async () => {
     const name = $('plName').value.trim();
-    if (!name || !checked.size) {
-      $('selInfo').textContent = !name ? 'Donne un nom à la playlist.' : 'Coche au moins une vidéo.';
-      return;
-    }
+    if (!name || !checked.size) return say(!name ? 'Donne un nom à la playlist.' : 'Coche au moins une vidéo.');
     if (name in playlists && !confirm(`La playlist « ${name} » existe déjà. La remplacer ?`)) return;
     await savePlaylist(name, [...checked]);
     $('plName').value = '';
-    showTab('playlists');
+    say(`Playlist « ${name} » enregistrée (${checked.size} vidéo(s)).`);
+  };
+
+  // Ajoute les vidéos cochées à une playlist existante, sans doublon.
+  $('plAdd').onclick = async () => {
+    const name = $('plTarget').value;
+    if (!name) return say('Choisis une playlist.');
+    if (!checked.size) return say('Coche au moins une vidéo.');
+    const have = new Set(playlists[name]);
+    const added = [...checked].filter((id) => !have.has(id));
+    if (!added.length) return say(`Déjà toutes dans « ${name} ».`);
+    await savePlaylist(name, [...playlists[name], ...added]);
+    say(`${added.length} vidéo(s) ajoutée(s) à « ${name} ».`);
   };
 
   $('plPlay').onclick = () => playList(plVideos(activePl));
@@ -354,8 +376,32 @@ async function init() {
   };
   const video = $('video');
   video.addEventListener('ended', () => step(1));
+
+  // Réglages de lecture : enregistrés à chaque modification, la valeur corrigée par le main est réaffichée.
+  for (const key of ['wheelSeconds', 'countPercent']) {
+    $(key).onchange = async () => {
+      settings = await window.playou4.setSettings({ [key]: $(key).value });
+      $(key).value = settings[key];
+    };
+  }
+
+  // Molette sur la vidéo : bas = avance, haut = recule, de `wheelSeconds` par cran (le pavé tactile cumule les petits pas).
+  let wheelAcc = 0;
+  video.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      if (!video.duration) return;
+      wheelAcc += e.deltaY;
+      const notches = Math.trunc(wheelAcc / 100);
+      if (!notches) return;
+      wheelAcc -= notches * 100;
+      video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + notches * settings.wheelSeconds));
+    },
+    { passive: false }
+  );
   video.addEventListener('timeupdate', () => {
-    if (!counted && video.duration > 0 && video.currentTime / video.duration >= 0.8) countPlay();
+    if (!counted && video.duration > 0 && video.currentTime / video.duration >= settings.countPercent / 100) countPlay();
   });
 
   await reload();

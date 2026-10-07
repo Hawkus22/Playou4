@@ -3,7 +3,7 @@
   "productName": "Playou4",
   "version": "0.1.0",
   "description": "Lecteur de vidéos mp4 avec tri, filtres et playlists - Hawkus Corp.",
-  "author": "Vachon Marc-Olivier",
+  "author": "Hawkus Corp.",
   "license": "UNLICENSED",
   "main": "src/main.js",
   "private": true,
@@ -16,7 +16,7 @@
   "build": {
     "appId": "fr.hawkuscorp.playou4",
     "productName": "Playou4",
-    "copyright": "Copyright © 2026 Hawkus Corp. — Vachon Marc-Olivier",
+    "copyright": "Copyright © 2026 Hawkus Corp.",
     "directories": {
       "output": "release"
     },

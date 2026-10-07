@@ -18,11 +18,13 @@ const DEFAULT_STORE = path.join(app.getPath('userData'), 'store.json');
 let storePath = DEFAULT_STORE;
 let store;
 
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, meta: {}, fpCache: {} });
+const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80 };
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 function readStoreFile(file) {
   const s = { ...emptyStore(), ...JSON.parse(fs.readFileSync(file, 'utf8')) };
   if (!s.folders.length) s.folders = [app.getPath('downloads')];
+  s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
   return s;
 }
 
@@ -161,7 +163,7 @@ async function listVideos() {
   await Promise.all(Array.from({ length: 8 }, worker));
   progress('Analyse des vidéos', total, total, true);
   saveStore();
-  return { videos: [...byFp.values()], folders: store.folders, playlists: store.playlists };
+  return { videos: [...byFp.values()], folders: store.folders, playlists: store.playlists, settings: store.settings };
 }
 
 // Déplace un fichier ; entre deux disques, copie par flux avec progression (onBytes reçoit les octets copiés).
@@ -202,6 +204,16 @@ ipcMain.handle('folders:remove', (_e, f) => {
   store.folders = store.folders.filter((x) => x !== f);
   saveStore();
   return store.folders;
+});
+
+// Réglages de lecture : pas de la molette (secondes) et seuil (% visionné) à partir duquel une vidéo est comptée lue.
+ipcMain.handle('settings:set', (_e, patch) => {
+  const clamp = (v, lo, hi, def) => (Number.isFinite(+v) ? Math.min(hi, Math.max(lo, Math.round(+v))) : def);
+  const s = store.settings;
+  if ('wheelSeconds' in patch) s.wheelSeconds = clamp(patch.wheelSeconds, 1, 600, s.wheelSeconds);
+  if ('countPercent' in patch) s.countPercent = clamp(patch.countPercent, 1, 100, s.countPercent);
+  saveStore();
+  return s;
 });
 
 ipcMain.handle('playlists:save', (_e, name, ids) => {

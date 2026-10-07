@@ -1,13 +1,13 @@
 # Playou4
 
-Application desktop Windows (Electron) — Hawkus Corp. (auteur : Vachon Marc-Olivier)
+Application desktop Windows (Electron) — Hawkus Corp.
 Lecteur de vidéos mp4, compagnon de [You4](../You4) : lit les vidéos téléchargées par You4 et tous les mp4 des dossiers choisis.
 
 ## Fonctions
 
 - **Bibliothèque** : tri (date, auteur, titre, nombre de lectures), filtres (recherche, auteur, plage de dates), cases à cocher.
 - **Playlists** : enregistrer la sélection, lire, mettre à jour, supprimer, et **déplacer la playlist** vers un autre dossier ou disque.
-- **Compteur de lectures** par vidéo (compté à 80 % de visionnage), conservé après déplacement : les vidéos sont identifiées par une empreinte de leur contenu, pas par leur chemin.
+- **Compteur de lectures** par vidéo (seuil réglable, 80 % par défaut), conservé après déplacement : les vidéos sont identifiées par une empreinte de leur contenu, pas par leur chemin.
 - **Réglages** : dossiers analysés (sous-dossiers inclus), emplacement du fichier de playlists (ouvrir un autre fichier / le déplacer).
 - **À propos** : version et mise à jour automatique via GitHub Releases.
 

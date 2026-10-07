@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('playou4', {
   storeReveal: call('store:reveal'),
   storeOpen: call('store:open'),
   storeSaveAs: call('store:saveAs'),
+  setSettings: call('settings:set'),
   appInfo: call('app:info'),
   checkUpdate: call('update:check'),
   installUpdate: call('update:install'),

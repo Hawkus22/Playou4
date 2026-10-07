@@ -19,6 +19,15 @@
   <section id="tab-library" class="active">
     <div class="tools">
       <input id="q" type="search" placeholder="Rechercher titre / auteur…">
+      <div class="row pl">
+        <input id="plName" placeholder="Nom de la playlist">
+        <button id="plSave" class="primary">Enregistrer la playlist</button>
+      </div>
+      <div class="row pl">
+        <select id="plTarget"></select>
+        <button id="plAdd">Ajouter à la playlist</button>
+      </div>
+      <div id="plMsg"></div>
       <select id="author"></select>
       <select id="sort">
         <option value="date-desc">Date ↓ (récent)</option>
@@ -37,13 +46,6 @@
       <div id="count"></div>
     </div>
     <ul id="list" class="vlist"></ul>
-    <div class="foot">
-      <div id="selInfo"></div>
-      <div class="row">
-        <input id="plName" placeholder="Nom de la playlist">
-        <button id="plSave" class="primary">Enregistrer la playlist</button>
-      </div>
-    </div>
   </section>
 
   <section id="tab-playlists">
@@ -71,6 +73,15 @@
       <p class="dim">Tous les .mp4 de ces dossiers (sous-dossiers inclus) apparaissent dans la bibliothèque.</p>
       <ul id="folderList"></ul>
       <button id="addFolder" class="primary">Ajouter un dossier…</button>
+      <h3>Lecture</h3>
+      <div class="setting">
+        <label for="wheelSeconds">Molette sur la vidéo : saut par cran</label>
+        <span><input id="wheelSeconds" type="number" min="1" max="600" step="1"> s</span>
+      </div>
+      <div class="setting">
+        <label for="countPercent">Vidéo comptée « lue » à partir de</label>
+        <span><input id="countPercent" type="number" min="1" max="100" step="1"> % visionné</span>
+      </div>
       <h3>Fichier de playlists</h3>
       <p class="dim">Contient les playlists, les compteurs de lecture et la liste des dossiers.</p>
       <div id="storePath" class="path"></div>
@@ -88,7 +99,7 @@
       <div class="brand">Playou<span>4</span></div>
       <p id="aboutVersion" class="dim"></p>
       <p>Lecteur de vidéos mp4 avec tri, filtres, compteur de lectures et playlists déplaçables.<br>
-        Développé par <strong>Vachon Marc-Olivier</strong> pour <strong>Hawkus Corp.</strong></p>
+        Développé par <strong>Hawkus Corp.</strong></p>
       <p>Compagnon de <strong>You4</strong> : lit les vidéos téléchargées par You4, ainsi que tous les mp4 des dossiers choisis.</p>
       <h3>Mises à jour</h3>
       <div id="updateStatus" class="path"></div>
