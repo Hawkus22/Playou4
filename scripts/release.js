@@ -28,6 +28,9 @@ try {
 if (released) die(`La Release ${tag} existe déjà : incrémentez la version (npm version patch).`);
 if (!out('git tag --list ' + tag)) die(`Le tag ${tag} est absent : lancez npm version patch puis git push --follow-tags.`);
 
+// --follow-tags ne pousse pas les tags légers (git tag vX) : on s'assure que le tag est bien sur origin avant la Release.
+if (!out(`git ls-remote --tags origin ${tag}`)) run(`git push origin ${tag}`);
+
 run('npm run dist');
 
 const files = [`release/Playou4-Setup-${version}.exe`, `release/Playou4-Setup-${version}.exe.blockmap`, 'release/latest.yml'];
