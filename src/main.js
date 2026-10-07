@@ -321,6 +321,33 @@ ipcMain.handle('app:info', () => ({ version: app.getVersion(), update: updater.g
 ipcMain.handle('update:check', () => updater.checkForUpdate());
 ipcMain.handle('update:install', () => updater.installUpdate());
 
+// ---- « Afficher dans Playou4 » (lancé par You4 : Playou4.exe --show "<fichier>") ----------------
+// Une seule instance : un second lancement donne son argument à la fenêtre déjà ouverte.
+
+const showArg = (argv) => {
+  const i = argv.indexOf('--show');
+  return i >= 0 && argv[i + 1] ? argv[i + 1] : null;
+};
+let pendingShow = showArg(process.argv); // fichier demandé avant que l'interface soit prête
+
+ipcMain.handle('show:pending', () => {
+  const p = pendingShow;
+  pendingShow = null;
+  return p;
+});
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    const p = showArg(argv);
+    if (p) win.webContents.send('show:file', p);
+  });
+}
+
 app.whenReady().then(() => {
   loadStore();
   win = new BrowserWindow({

@@ -18,5 +18,7 @@ contextBridge.exposeInMainWorld('playou4', {
   checkUpdate: call('update:check'),
   installUpdate: call('update:install'),
   onUpdate: (cb) => ipcRenderer.on('update:state', (_e, s) => cb(s)),
+  showPending: call('show:pending'),
+  onShowFile: (cb) => ipcRenderer.on('show:file', (_e, p) => cb(p)),
   onProgress: (cb) => ipcRenderer.on('progress', (_e, p) => cb(p)),
 });

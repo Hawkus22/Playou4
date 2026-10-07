@@ -27,6 +27,8 @@ button.danger:hover { background:#4a1d24; }
 .vlist li { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer; }
 .vlist li:hover { background:#232632; }
 .vlist li.playing { background:#2a1f26; border-left:3px solid var(--acc); }
+.vlist li.flash { animation: flash 2.5s ease-out; }
+@keyframes flash { 0%, 60% { background:#3a3a1f; outline:2px solid var(--acc); } 100% { outline:2px solid transparent; } }
 .vlist li.missing { opacity:.45; cursor:default; }
 .vlist .meta { min-width:0; flex:1; }
 .vlist .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }

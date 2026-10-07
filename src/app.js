@@ -280,6 +280,27 @@ async function reload() {
   renderPlaylists();
 }
 
+// Affiche une vidéo dans la bibliothèque (demandé par You4) : filtres levés, défilement, surbrillance.
+async function showFile(p) {
+  const same = (v) => v.path.toLowerCase() === String(p).toLowerCase();
+  let v = videos.find(same);
+  if (!v) {
+    await reload(); // fichier récent ou dossier pas encore analysé
+    v = videos.find(same);
+  }
+  if (!v) return alert(`Vidéo introuvable dans la bibliothèque :\n${p}\n\nAjoute son dossier dans les réglages.`);
+  $('q').value = '';
+  $('author').value = '';
+  $('onlyChecked').checked = false;
+  showTab('library');
+  refresh();
+  const li = [...$('list').children].find((el) => el.dataset.id === v.id);
+  if (!li) return;
+  li.scrollIntoView({ block: 'center' });
+  li.classList.add('flash');
+  setTimeout(() => li.classList.remove('flash'), 2500);
+}
+
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
@@ -401,6 +422,9 @@ async function init() {
     if (!counted && video.duration > 0 && video.currentTime / video.duration >= settings.countPercent / 100) countPlay();
   });
 
+  window.playou4.onShowFile(showFile);
   await reload();
+  const pending = await window.playou4.showPending();
+  if (pending) showFile(pending);
 }
 init();
