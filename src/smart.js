@@ -10,6 +10,7 @@
     byAuthor: true,
     byKeyword: true,
     byDuration: true,
+    byLanguage: true,
     minAuthor: 2, // vidéos minimum pour une playlist d'auteur
     minKeyword: 3, // vidéos minimum pour une playlist de mot-clé
     maxKeywords: 20, // nombre maximum de playlists de mots-clés
@@ -72,7 +73,7 @@
     const o = { ...DEFAULTS, ...(options || {}) };
     const ignored = ignorer(o.ignore);
     const playlists = {};
-    const counts = { author: 0, keyword: 0, duration: 0 };
+    const counts = { author: 0, keyword: 0, duration: 0, language: 0 };
     const seen = new Set(); // signatures de contenu : pas deux playlists identiques
     const add = (kind, name, ids) => {
       const sig = [...ids].sort().join('|');
@@ -132,6 +133,25 @@
       for (const [, e] of ranked) {
         const best = [...e.forms].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'fr'))[0][0];
         add('keyword', `Mot-clé · ${cap(best)}`, e.ids);
+      }
+    }
+
+    // Langue parlée (détectée par Playou4) : une playlist par langue assez présente, « non détectée » exclue
+    if (o.byLanguage) {
+      const by = new Map();
+      for (const v of videos) {
+        if (!v.lang || v.lang === 'und') continue;
+        if (!by.has(v.lang)) by.set(v.lang, []);
+        by.get(v.lang).push(v.id);
+      }
+      let names = null;
+      try {
+        names = new Intl.DisplayNames(['fr'], { type: 'language' });
+      } catch {
+        /* noms indisponibles : on garde le code */
+      }
+      for (const [code, ids] of [...by].sort((a, b) => b[1].length - a[1].length)) {
+        if (ids.length >= o.minKeyword && !ignored(code)) add('language', `Langue · ${cap(names ? names.of(code) : code)}`, ids);
       }
     }
 

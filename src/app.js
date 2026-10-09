@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('fr-FR');
 const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : Math.round(b / 1048576) + ' Mo');
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
-const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${fmtSize(v.size)} · ▶ ${v.plays}`;
+const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)} · ▶ ${v.plays}`;
 
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
@@ -91,11 +91,16 @@ function refresh() {
   const pl = $('plFilter').value;
   const plIds = new Set(pl ? playlists[pl] || [] : []);
   const dur = $('durFilter').value;
+  const lg = $('langFilter').value;
   const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
     .filter((v) => {
       if (au && v.creator !== au) return false;
       if (pl && !plIds.has(v.id)) return false;
+      if (lg === 'fr' && v.lang !== 'fr') return false;
+      if (lg === 'other' && (!v.lang || v.lang === 'fr' || v.lang === 'und')) return false;
+      if (lg === 'und' && v.lang !== 'und') return false;
+      if (lg === 'none' && v.lang) return false;
       if (dur) {
         const m = v.duration / 60;
         if (!v.duration) return false;
@@ -350,7 +355,7 @@ async function deleteVideos(list) {
 
 // ---- Playlists intelligentes ---------------------------------------------------------------
 
-const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', folderAuthors: 'smFolders', auto: 'smAuto' };
+const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', byLanguage: 'smLang', folderAuthors: 'smFolders', auto: 'smAuto' };
 const SM_NUMS = { minAuthor: 'smMinAuthor', minKeyword: 'smMinKeyword', maxKeywords: 'smMaxKeywords', shortMax: 'smShort', longMin: 'smLong' };
 
 function fillSmart(o) {
@@ -376,14 +381,77 @@ async function runSmart() {
   renderPlaylists();
   const n = Object.keys(proposals).length;
   $('smMsg').textContent = n
-    ? `${n} playlist(s) automatique(s) : ${counts.author} par auteur, ${counts.keyword} par mot-clé, ${counts.duration} par durée.`
+    ? `${n} playlist(s) automatique(s) : ${counts.author} par auteur, ${counts.keyword} par mot-clé, ${counts.duration} par durée, ${counts.language} par langue.`
     : 'Rien à créer avec ces réglages (pas assez de pistes en commun).';
+}
+
+// ---- Langue parlée ------------------------------------------------------------------------
+
+let langRunning = false;
+let langTimer = null;
+
+async function refreshLangUi() {
+  const st = await window.playou4.langStatus();
+  langRunning = st.running;
+  $('langModel').value = settings.langModel || 'base';
+  $('langAuto').checked = !!settings.langAuto;
+  const analysed = videos.filter((v) => v.lang).length;
+  const fr = videos.filter((v) => v.lang === 'fr').length;
+  $('langState').textContent = st.installed
+    ? `Moteur installé (${st.model}). ${analysed} vidéo(s) analysée(s) sur ${videos.length}, dont ${fr} en français.`
+    : `Moteur non installé (${st.model === 'tiny' ? '≈ 80 Mo' : '≈ 150 Mo'} à télécharger, une seule fois).`;
+  $('langInstall').hidden = st.installed;
+  for (const id of ['langRun', 'langRunView']) $(id).hidden = !st.installed || st.running;
+  $('langStop').hidden = !st.running;
+}
+
+async function startLang(list) {
+  const items = list.filter((v) => !v.lang).map((v) => ({ id: v.id, path: v.path, duration: v.duration }));
+  if (!items.length) { $('langMsg').textContent = 'Rien à analyser : toutes ces vidéos ont déjà une langue.'; return; }
+  const r = await window.playou4.langAnalyze(items);
+  $('langMsg').textContent = r.started ? `Analyse de ${r.started} vidéo(s) en arrière-plan…` : 'Analyse impossible (moteur absent ou déjà en cours).';
+  refreshLangUi();
+}
+
+async function initLang() {
+  $('langModel').onchange = async () => {
+    settings = await window.playou4.setSettings({ langModel: $('langModel').value });
+    refreshLangUi();
+  };
+  $('langAuto').onchange = async () => { settings = await window.playou4.setSettings({ langAuto: $('langAuto').checked }); };
+  $('langInstall').onclick = async () => {
+    $('langInstall').disabled = true;
+    $('langMsg').textContent = 'Téléchargement…';
+    const r = await window.playou4.langInstall();
+    $('langInstall').disabled = false;
+    $('langMsg').textContent = r.ok ? 'Moteur installé.' : `Échec : ${r.error}`;
+    refreshLangUi();
+  };
+  $('langRun').onclick = () => startLang(videos);
+  $('langRunView').onclick = () => startLang(view);
+  $('langStop').onclick = () => window.playou4.langCancel();
+  window.playou4.onLangProgress((p) => {
+    if (p.phase === 'analyse') $('langMsg').textContent = `Analyse : ${p.done} / ${p.total}`;
+    else $('langMsg').textContent = `${p.phase} : ${p.total ? Math.round((p.done / p.total) * 100) + ' %' : Math.round(p.done / 1048576) + ' Mo'}`;
+  });
+  window.playou4.onLangResult((r) => {
+    const v = byId(r.id);
+    if (v) v.lang = r.lang;
+    if (!langTimer) langTimer = setTimeout(() => { langTimer = null; refresh(); }, 2000); // pas à chaque résultat
+  });
+  window.playou4.onLangDone((r) => {
+    $('langMsg').textContent = r.cancelled ? `Analyse arrêtée (${r.done} / ${r.total}).` : `Analyse terminée : ${r.total} vidéo(s).`;
+    refresh();
+    refreshLangUi();
+  });
+  await refreshLangUi();
+  if (settings.langAuto && !langRunning && (await window.playou4.langStatus()).installed) startLang(videos);
 }
 
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter'].forEach((id) => $(id).addEventListener('input', refresh));
+  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter'].forEach((id) => $(id).addEventListener('input', refresh));
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();
@@ -531,6 +599,7 @@ async function init() {
   }
   window.playou4.onShowFile(showFile);
   await reload();
+  await initLang();
   if (settings.smart.auto) runSmart(); // régénération au lancement
   const pending = await window.playou4.showPending();
   if (pending) showFile(pending);

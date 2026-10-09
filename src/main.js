@@ -8,6 +8,7 @@ const { pipeline } = require('stream/promises');
 const updater = require('./updater');
 const Smart = require('./smart');
 const { readDuration } = require('./duration');
+const createLang = require('./lang');
 const { pathToFileURL } = require('url');
 
 const YOU4_DB = path.join(app.getPath('appData'), 'You4', 'you4.db');
@@ -20,8 +21,8 @@ const DEFAULT_STORE = path.join(app.getPath('userData'), 'store.json');
 let storePath = DEFAULT_STORE;
 let store;
 
-const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, smart: { ...Smart.DEFAULTS } };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 
 // Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
@@ -34,6 +35,7 @@ function sanitizeSmart(v) {
     byAuthor: b(o.byAuthor, D.byAuthor),
     byKeyword: b(o.byKeyword, D.byKeyword),
     byDuration: b(o.byDuration, D.byDuration),
+    byLanguage: b(o.byLanguage, D.byLanguage),
     auto: b(o.auto, D.auto),
     folderAuthors: b(o.folderAuthors, D.folderAuthors),
     ignore: typeof o.ignore === 'string' ? o.ignore.slice(0, 2000) : D.ignore,
@@ -53,6 +55,8 @@ function readStoreFile(file) {
   s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
   s.settings.smart = sanitizeSmart(s.settings.smart);
   if (!Array.isArray(s.autoPlaylists)) s.autoPlaylists = [];
+  if (!s.lang || typeof s.lang !== 'object') s.lang = {};
+  if (!['tiny', 'base'].includes(s.settings.langModel)) s.settings.langModel = DEFAULT_SETTINGS.langModel;
   return s;
 }
 
@@ -188,6 +192,7 @@ async function listVideos() {
           date: m.date || st.mtime.toISOString(),
           size: st.size,
           duration: dur,
+          lang: (store.lang[fp] || {}).l || null,
           url: pathToFileURL(f).href,
           path: f,
           plays: p.count || 0,
@@ -230,6 +235,70 @@ async function moveFile(src, dst, onBytes) {
 let win;
 
 ipcMain.handle('library:list', listVideos);
+// ---- Langue parlée (Whisper, installé à la demande) ---------------------------------------------
+const toUi = (channel, payload) => win && !win.isDestroyed() && win.webContents.send(channel, payload);
+const ffmpegExe = () => require('ffmpeg-static').replace('app.asar', 'app.asar.unpacked');
+let langEngine = null;
+let langEngineModel = '';
+function getLang() {
+  const model = store.settings.langModel;
+  if (!langEngine || langEngineModel !== model) {
+    langEngineModel = model;
+    langEngine = createLang({ dir: path.join(app.getPath('userData'), 'lang'), ffmpeg: ffmpegExe(), modelName: model });
+  }
+  return langEngine;
+}
+let langJob = null; // { total, done, cancelled }
+
+ipcMain.handle('lang:status', () => ({
+  installed: getLang().installed(),
+  model: store.settings.langModel,
+  running: !!langJob,
+  total: langJob ? langJob.total : 0,
+  done: langJob ? langJob.done : 0,
+}));
+
+ipcMain.handle('lang:install', async () => {
+  try {
+    await getLang().install((p) => toUi('lang:progress', p));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// Analyse en arrière-plan (2 vidéos à la fois) ; chaque résultat est conservé avec l'empreinte du fichier.
+ipcMain.handle('lang:analyze', (_e, items) => {
+  if (langJob || !getLang().installed()) return { started: 0 };
+  const list = (Array.isArray(items) ? items : []).filter((i) => i && typeof i.id === 'string' && typeof i.path === 'string');
+  if (!list.length) return { started: 0 };
+  const lang = getLang();
+  const job = { total: list.length, done: 0, cancelled: false };
+  langJob = job;
+  const queue = list.slice();
+  const worker = async () => {
+    for (let it; !job.cancelled && (it = queue.shift()); ) {
+      const r = await lang.detectLanguage(it.path, Number(it.duration) || 0);
+      if (r) {
+        store.lang[it.id] = { l: r.lang, p: r.p };
+        toUi('lang:result', { id: it.id, lang: r.lang, p: r.p });
+      }
+      job.done++;
+      if (job.done % 20 === 0) saveStore();
+      toUi('lang:progress', { phase: 'analyse', done: job.done, total: job.total });
+    }
+  };
+  Promise.all([worker(), worker()]).finally(() => {
+    saveStore();
+    langJob = null;
+    toUi('lang:done', { done: job.done, total: job.total, cancelled: job.cancelled });
+  });
+  return { started: list.length };
+});
+ipcMain.handle('lang:cancel', () => {
+  if (langJob) langJob.cancelled = true;
+});
+
 ipcMain.handle('library:reveal', (_e, p) => shell.showItemInFolder(p));
 
 // Met des fichiers à la Corbeille (récupérables) ; ne touche que des fichiers de la bibliothèque.
@@ -253,6 +322,7 @@ ipcMain.handle('library:trash', async (_e, items) => {
   for (const id of gone) {
     delete store.plays[id];
     delete store.meta[id];
+    delete store.lang[id];
   }
   for (const f of Object.keys(store.fpCache)) if (!fs.existsSync(f)) delete store.fpCache[f];
   for (const n of Object.keys(store.playlists)) {
@@ -284,6 +354,8 @@ ipcMain.handle('settings:set', (_e, patch) => {
   const s = store.settings;
   if ('wheelSeconds' in patch) s.wheelSeconds = clamp(patch.wheelSeconds, 1, 600, s.wheelSeconds);
   if ('countPercent' in patch) s.countPercent = clamp(patch.countPercent, 1, 100, s.countPercent);
+  if ('langAuto' in patch) s.langAuto = !!patch.langAuto;
+  if ('langModel' in patch && ['tiny', 'base'].includes(patch.langModel)) s.langModel = patch.langModel;
   if ('smart' in patch) s.smart = sanitizeSmart({ ...s.smart, ...patch.smart });
   saveStore();
   return s;

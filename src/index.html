@@ -29,6 +29,7 @@
           <option value="long">Longues</option>
         </select>
       </div>
+      <div class="row two">
       <select id="sort">
         <option value="date-desc">Date ↓ (récent)</option>
         <option value="date-asc">Date ↑ (ancien)</option>
@@ -39,6 +40,14 @@
         <option value="plays-desc">Plus lues</option>
         <option value="plays-asc">Moins lues / jamais lues</option>
       </select>
+      <select id="langFilter" title="Filtrer par langue parlée">
+        <option value="">Toutes langues</option>
+        <option value="fr">Français</option>
+        <option value="other">Autres langues</option>
+        <option value="und">Non détectée</option>
+        <option value="none">Pas encore analysée</option>
+      </select>
+      </div>
       <div class="row">
         <button id="selAll">Tout cocher</button>
         <button id="selNone">Tout décocher</button>
@@ -66,6 +75,7 @@
         <p class="dim">Crée et range automatiquement des playlists ; une même vidéo peut être dans plusieurs. Les playlists « Auto · … » sont régénérées à chaque fois, les tiennes ne sont jamais touchées.</p>
         <label><input type="checkbox" id="smAuthor"> Par auteur (au moins <input id="smMinAuthor" type="number" min="2" max="100"> vidéos)</label>
         <label><input type="checkbox" id="smKeyword"> Par mots du titre (au moins <input id="smMinKeyword" type="number" min="2" max="100"> vidéos, <input id="smMaxKeywords" type="number" min="1" max="100"> listes au plus)</label>
+        <label><input type="checkbox" id="smLang"> Par langue parlée (nécessite l'analyse de la langue, dans Réglages)</label>
         <label><input type="checkbox" id="smDuration"> Par durée (courtes sous <input id="smShort" type="number" min="1" max="600"> min, longues dès <input id="smLong" type="number" min="2" max="600"> min)</label>
         <label><input type="checkbox" id="smFolders"> Utiliser aussi les noms de dossiers comme auteurs</label>
         <label class="stack">Ignorer (auteurs, dossiers ou mots ; séparés par une virgule, * = joker)
@@ -113,6 +123,21 @@
         <label for="countPercent">Vidéo comptée « lue » à partir de</label>
         <span><input id="countPercent" type="number" min="1" max="100" step="1"> % visionné</span>
       </div>
+      <h3>Langue parlée</h3>
+      <p class="dim">Détecte la langue en écoutant quelques extraits de chaque vidéo (Whisper, sur ton PC, sans internet). Les vidéos sans parole claire restent « non détectées ».</p>
+      <div class="setting">
+        <label for="langModel">Précision</label>
+        <select id="langModel"><option value="base">Précise (≈ 150 Mo, plus lente)</option><option value="tiny">Rapide (≈ 80 Mo)</option></select>
+      </div>
+      <div id="langState" class="path"></div>
+      <div class="row">
+        <button id="langInstall" class="primary">Installer le moteur</button>
+        <button id="langRun">Analyser tout ce qui ne l'est pas encore</button>
+        <button id="langRunView">Seulement les vidéos affichées</button>
+        <button id="langStop">Arrêter</button>
+      </div>
+      <label class="check"><input type="checkbox" id="langAuto"> Analyser automatiquement les nouvelles vidéos au lancement</label>
+      <div id="langMsg" class="dim"></div>
       <h3>Fichier de playlists</h3>
       <p class="dim">Contient les playlists, les compteurs de lecture et la liste des dossiers.</p>
       <div id="storePath" class="path"></div>
