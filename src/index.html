@@ -50,6 +50,21 @@
   </section>
 
   <section id="tab-playlists">
+    <details id="smartBox" class="smart">
+      <summary>✨ Playlists intelligentes</summary>
+      <div class="smart-body">
+        <p class="dim">Crée et range automatiquement des playlists ; une même vidéo peut être dans plusieurs. Les playlists « Auto · … » sont régénérées à chaque fois, les tiennes ne sont jamais touchées.</p>
+        <label><input type="checkbox" id="smAuthor"> Par auteur (au moins <input id="smMinAuthor" type="number" min="2" max="100"> vidéos)</label>
+        <label><input type="checkbox" id="smKeyword"> Par mots du titre (au moins <input id="smMinKeyword" type="number" min="2" max="100"> vidéos, <input id="smMaxKeywords" type="number" min="1" max="100"> listes au plus)</label>
+        <label><input type="checkbox" id="smDuration"> Par durée (courtes sous <input id="smShort" type="number" min="1" max="600"> min, longues dès <input id="smLong" type="number" min="2" max="600"> min)</label>
+        <label><input type="checkbox" id="smAuto"> Mettre à jour automatiquement au lancement</label>
+        <div class="row">
+          <button id="smRun" class="primary">Générer / mettre à jour</button>
+          <button id="smClear">Supprimer les « Auto »</button>
+        </div>
+        <div id="smMsg" class="dim"></div>
+      </div>
+    </details>
     <ul id="plList"></ul>
     <div id="plDetail" hidden>
       <div class="detail-head">
@@ -132,6 +147,7 @@
   <div class="track"><div id="progFill"></div></div>
   <div id="progPct"></div>
 </div>
+<script src="smart.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

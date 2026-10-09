@@ -1,7 +1,8 @@
 const $ = (id) => document.getElementById(id);
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('fr-FR');
 const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : Math.round(b / 1048576) + ' Mo');
-const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${fmtSize(v.size)} · ▶ ${v.plays}`;
+const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
+const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${fmtSize(v.size)} · ▶ ${v.plays}`;
 
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
@@ -10,6 +11,7 @@ let current = null; // id en lecture
 let counted = false; // lecture courante déjà comptée
 let checked = new Set();
 let playlists = {};
+let autoNames = new Set(); // playlists créées par le moteur intelligent
 let activePl = ''; // playlist affichée dans l'onglet Playlists
 let settings = { wheelSeconds: 10, countPercent: 80 };
 
@@ -149,7 +151,7 @@ function renderPlaylists() {
   ul.textContent = '';
   for (const name of names) {
     const li = document.createElement('li');
-    li.className = name === activePl ? 'active' : '';
+    li.className = (name === activePl ? 'active' : '') + (autoNames.has(name) ? ' auto' : '');
     const n = document.createElement('span');
     n.textContent = name;
     const c = document.createElement('span');
@@ -182,6 +184,7 @@ function renderPlaylists() {
 
 async function savePlaylist(name, ids) {
   playlists = await window.playou4.savePlaylist(name, ids);
+  autoNames.delete(name); // modifiée à la main : n'est plus automatique
   activePl = name;
   renderPlaylists();
 }
@@ -264,7 +267,9 @@ async function reload() {
   const res = await window.playou4.list();
   videos = res.videos;
   playlists = res.playlists;
+  autoNames = new Set(res.auto || []);
   settings = res.settings;
+  fillSmart(settings.smart);
   $('wheelSeconds').value = settings.wheelSeconds;
   $('countPercent').value = settings.countPercent;
   const ids = new Set(videos.map((v) => v.id));
@@ -299,6 +304,36 @@ async function showFile(p) {
   li.scrollIntoView({ block: 'center' });
   li.classList.add('flash');
   setTimeout(() => li.classList.remove('flash'), 2500);
+}
+
+// ---- Playlists intelligentes ---------------------------------------------------------------
+
+const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', auto: 'smAuto' };
+const SM_NUMS = { minAuthor: 'smMinAuthor', minKeyword: 'smMinKeyword', maxKeywords: 'smMaxKeywords', shortMax: 'smShort', longMin: 'smLong' };
+
+function fillSmart(o) {
+  for (const [k, id] of Object.entries(SM_FLAGS)) $(id).checked = !!o[k];
+  for (const [k, id] of Object.entries(SM_NUMS)) $(id).value = o[k];
+}
+function readSmart() {
+  const o = {};
+  for (const [k, id] of Object.entries(SM_FLAGS)) o[k] = $(id).checked;
+  for (const [k, id] of Object.entries(SM_NUMS)) o[k] = Number($(id).value);
+  return o;
+}
+
+async function runSmart() {
+  settings = await window.playou4.setSettings({ smart: readSmart() }); // valeurs corrigées par le main
+  fillSmart(settings.smart);
+  const { playlists: proposals, counts } = Smart.generate(videos, settings.smart);
+  const res = await window.playou4.applyAuto(proposals);
+  playlists = res.playlists;
+  autoNames = new Set(res.auto);
+  renderPlaylists();
+  const n = Object.keys(proposals).length;
+  $('smMsg').textContent = n
+    ? `${n} playlist(s) automatique(s) : ${counts.author} par auteur, ${counts.keyword} par mot-clé, ${counts.duration} par durée.`
+    : 'Rien à créer avec ces réglages (pas assez de pistes en commun).';
 }
 
 async function init() {
@@ -422,8 +457,26 @@ async function init() {
     if (!counted && video.duration > 0 && video.currentTime / video.duration >= settings.countPercent / 100) countPlay();
   });
 
+  $('smRun').onclick = runSmart;
+  $('smClear').onclick = async () => {
+    if (!autoNames.size) return;
+    if (!confirm(`Supprimer les ${autoNames.size} playlist(s) automatique(s) ? (les fichiers et tes playlists restent)`)) return;
+    const res = await window.playou4.clearAuto();
+    playlists = res.playlists;
+    autoNames = new Set(res.auto);
+    activePl = '';
+    renderPlaylists();
+    $('smMsg').textContent = 'Playlists automatiques supprimées.';
+  };
+  for (const id of [...Object.values(SM_FLAGS), ...Object.values(SM_NUMS)]) {
+    $(id).onchange = async () => {
+      settings = await window.playou4.setSettings({ smart: readSmart() });
+      fillSmart(settings.smart);
+    };
+  }
   window.playou4.onShowFile(showFile);
   await reload();
+  if (settings.smart.auto) runSmart(); // régénération au lancement
   const pending = await window.playou4.showPending();
   if (pending) showFile(pending);
 }

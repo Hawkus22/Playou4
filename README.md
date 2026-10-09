@@ -7,6 +7,7 @@ Lecteur de vidéos mp4, compagnon de [You4](../You4) : lit les vidéos télécha
 
 - **Bibliothèque** : tri (date, auteur, titre, taille, nombre de lectures), filtres (recherche, auteur), cases à cocher.
 - **Playlists** : enregistrer la sélection, lire, mettre à jour, supprimer, et **déplacer la playlist** vers un autre dossier ou disque.
+- **Playlists intelligentes** : le moteur (`src/smart.js`) crée et range des playlists « Auto · … » par **auteur**, par **mots du titre** (mots fréquents, hors mots vides) et par **durée** (courtes / moyennes / longues, seuils réglables). Une vidéo peut être dans plusieurs playlists. Les playlists manuelles ne sont jamais modifiées ; mise à jour manuelle ou automatique au lancement. La durée est lue dans l'en-tête du fichier (`src/duration.js`) et mise en cache.
 - **Compteur de lectures** par vidéo (seuil réglable, 80 % par défaut), conservé après déplacement : les vidéos sont identifiées par une empreinte de leur contenu, pas par leur chemin.
 - **Réglages** : dossiers analysés (sous-dossiers inclus), emplacement du fichier de playlists (ouvrir un autre fichier / le déplacer).
 - **À propos** : version et mise à jour automatique via GitHub Releases.

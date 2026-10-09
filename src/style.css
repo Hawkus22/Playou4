@@ -40,6 +40,12 @@ button.danger:hover { background:#4a1d24; }
 #plMsg { flex:1 1 100%; font-size:12px; color:var(--accent2); }
 #plMsg:empty { display:none; }
 
+.smart { margin:8px; border:1px solid var(--line); border-radius:8px; background:#1b1d26; }
+.smart summary { padding:10px 12px; cursor:pointer; font-weight:600; }
+.smart-body { padding:0 12px 12px; display:flex; flex-direction:column; gap:8px; }
+.smart-body label { display:block; line-height:1.9; }
+.smart-body input[type=number] { width:56px; }
+#plList li.auto { border-style:dashed; }
 #plList { list-style:none; margin:0; padding:8px; display:flex; flex-direction:column; gap:6px; max-height:35%; overflow:auto; }
 #plList li { padding:10px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; }
 #plList li:hover { border-color:var(--accent2); }

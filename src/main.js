@@ -6,6 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 const updater = require('./updater');
+const Smart = require('./smart');
+const { readDuration } = require('./duration');
 const { pathToFileURL } = require('url');
 
 const YOU4_DB = path.join(app.getPath('appData'), 'You4', 'you4.db');
@@ -18,13 +20,37 @@ const DEFAULT_STORE = path.join(app.getPath('userData'), 'store.json');
 let storePath = DEFAULT_STORE;
 let store;
 
-const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80 };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, smart: { ...Smart.DEFAULTS } };
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+
+
+// Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
+function sanitizeSmart(v) {
+  const D = Smart.DEFAULTS;
+  const n = (x, lo, hi, def) => (Number.isFinite(+x) ? Math.min(hi, Math.max(lo, Math.round(+x))) : def);
+  const b = (x, def) => (typeof x === 'boolean' ? x : def);
+  const o = { ...D, ...(v || {}) };
+  const out = {
+    byAuthor: b(o.byAuthor, D.byAuthor),
+    byKeyword: b(o.byKeyword, D.byKeyword),
+    byDuration: b(o.byDuration, D.byDuration),
+    auto: b(o.auto, D.auto),
+    minAuthor: n(o.minAuthor, 2, 100, D.minAuthor),
+    minKeyword: n(o.minKeyword, 2, 100, D.minKeyword),
+    maxKeywords: n(o.maxKeywords, 1, 100, D.maxKeywords),
+    shortMax: n(o.shortMax, 1, 600, D.shortMax),
+    longMin: n(o.longMin, 1, 600, D.longMin),
+  };
+  if (out.longMin <= out.shortMax) out.longMin = out.shortMax + 1;
+  return out;
+}
 
 function readStoreFile(file) {
   const s = { ...emptyStore(), ...JSON.parse(fs.readFileSync(file, 'utf8')) };
   if (!s.folders.length) s.folders = [app.getPath('downloads')];
   s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+  s.settings.smart = sanitizeSmart(s.settings.smart);
+  if (!Array.isArray(s.autoPlaylists)) s.autoPlaylists = [];
   return s;
 }
 
@@ -117,6 +143,14 @@ function you4Meta() {
   return map;
 }
 
+// Durée lue une fois par fichier, puis conservée avec l'empreinte (mêmes taille et date = même durée).
+async function cachedDuration(file, st) {
+  const c = store.fpCache[file];
+  if (!c) return 0;
+  if (c.dur === undefined) c.dur = await readDuration(file, st.size);
+  return c.dur || 0;
+}
+
 async function listVideos() {
   const files = [];
   progress('Recherche des fichiers mp4…', 0, 0, true);
@@ -134,6 +168,7 @@ async function listVideos() {
         st = await fsp.stat(f);
         const fp = await fingerprint(f, st);
         if (byFp.has(fp)) continue; // doublon exact : une seule entrée
+        const dur = await cachedDuration(f, st);
         const d = y4.get(f.toLowerCase());
         if (d && d.creator) store.meta[fp] = { creator: d.creator, date: d.finished_at || st.mtime.toISOString() };
         const m = store.meta[fp] || {};
@@ -148,6 +183,7 @@ async function listVideos() {
           creator,
           date: m.date || st.mtime.toISOString(),
           size: st.size,
+          duration: dur,
           url: pathToFileURL(f).href,
           path: f,
           plays: p.count || 0,
@@ -163,7 +199,7 @@ async function listVideos() {
   await Promise.all(Array.from({ length: 8 }, worker));
   progress('Analyse des vidéos', total, total, true);
   saveStore();
-  return { videos: [...byFp.values()], folders: store.folders, playlists: store.playlists, settings: store.settings };
+  return { videos: [...byFp.values()], folders: store.folders, playlists: store.playlists, auto: store.autoPlaylists, settings: store.settings };
 }
 
 // Déplace un fichier ; entre deux disques, copie par flux avec progression (onBytes reçoit les octets copiés).
@@ -212,14 +248,34 @@ ipcMain.handle('settings:set', (_e, patch) => {
   const s = store.settings;
   if ('wheelSeconds' in patch) s.wheelSeconds = clamp(patch.wheelSeconds, 1, 600, s.wheelSeconds);
   if ('countPercent' in patch) s.countPercent = clamp(patch.countPercent, 1, 100, s.countPercent);
+  if ('smart' in patch) s.smart = sanitizeSmart({ ...s.smart, ...patch.smart });
   saveStore();
   return s;
 });
 
 ipcMain.handle('playlists:save', (_e, name, ids) => {
   store.playlists[name] = ids;
+  store.autoPlaylists = store.autoPlaylists.filter((n) => n !== name); // modifiée à la main : n'est plus automatique
   saveStore();
   return store.playlists;
+});
+// Remplace toutes les playlists automatiques par la proposition du moteur ; les playlists manuelles ne sont jamais touchées.
+ipcMain.handle('playlists:applyAuto', (_e, proposals) => {
+  for (const n of store.autoPlaylists) delete store.playlists[n];
+  store.autoPlaylists = [];
+  for (const [name, ids] of Object.entries(proposals || {})) {
+    if (name in store.playlists || !Array.isArray(ids)) continue; // homonyme manuel : on ne l'écrase pas
+    store.playlists[name] = ids;
+    store.autoPlaylists.push(name);
+  }
+  saveStore();
+  return { playlists: store.playlists, auto: store.autoPlaylists };
+});
+ipcMain.handle('playlists:clearAuto', () => {
+  for (const n of store.autoPlaylists) delete store.playlists[n];
+  store.autoPlaylists = [];
+  saveStore();
+  return { playlists: store.playlists, auto: store.autoPlaylists };
 });
 ipcMain.handle('playlists:delete', (_e, name) => {
   delete store.playlists[name];
