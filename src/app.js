@@ -88,9 +88,21 @@ function fillVideoList(ul, list, { withCheckbox }) {
 function refresh() {
   const q = $('q').value.trim().toLowerCase();
   const au = $('author').value;
+  const pl = $('plFilter').value;
+  const plIds = new Set(pl ? playlists[pl] || [] : []);
+  const dur = $('durFilter').value;
+  const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
     .filter((v) => {
       if (au && v.creator !== au) return false;
+      if (pl && !plIds.has(v.id)) return false;
+      if (dur) {
+        const m = v.duration / 60;
+        if (!v.duration) return false;
+        if (dur === 'short' && m >= sm.shortMax) return false;
+        if (dur === 'mid' && (m < sm.shortMax || m >= sm.longMin)) return false;
+        if (dur === 'long' && m < sm.longMin) return false;
+      }
       if (q && !(v.title + ' ' + v.creator).toLowerCase().includes(q)) return false;
       if ($('onlyChecked').checked && !checked.has(v.id)) return false;
       return true;
@@ -170,6 +182,14 @@ function renderPlaylists() {
   target.append(new Option(names.length ? 'Choisir une playlist…' : 'Aucune playlist', ''));
   for (const name of names) target.append(new Option(`${name} (${plVideos(name).length})`, name));
   target.value = names.includes(prev) ? prev : activePl;
+  // Filtre de la bibliothèque : « Toutes les vidéos » ou une playlist (s'applique tout de suite au changement).
+  const filter = $('plFilter');
+  const prevFilter = filter.value;
+  filter.textContent = '';
+  filter.append(new Option('Toutes les vidéos', ''));
+  for (const name of names) filter.append(new Option(`${name} (${plVideos(name).length})`, name));
+  filter.value = names.includes(prevFilter) ? prevFilter : '';
+  if (filter.value !== prevFilter) refresh(); // la playlist filtrée n'existe plus
   $('plEmpty').hidden = names.length > 0;
   $('plDetail').hidden = !activePl;
   if (!activePl) return;
@@ -363,7 +383,7 @@ async function runSmart() {
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-  ['q', 'author', 'sort', 'onlyChecked'].forEach((id) => $(id).addEventListener('input', refresh));
+  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter'].forEach((id) => $(id).addEventListener('input', refresh));
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();
@@ -397,6 +417,12 @@ async function init() {
   };
 
   $('plPlay').onclick = () => playList(plVideos(activePl));
+  $('plShow').onclick = () => {
+    $('plFilter').value = activePl;
+    $('onlyChecked').checked = false;
+    refresh();
+    showTab('library');
+  };
   $('plLoad').onclick = () => {
     checked = new Set(plVideos(activePl).map((v) => v.id));
     saveChecked();

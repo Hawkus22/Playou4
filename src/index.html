@@ -19,16 +19,16 @@
   <section id="tab-library" class="active">
     <div class="tools">
       <input id="q" type="search" placeholder="Rechercher titre / auteur…">
-      <div class="row pl">
-        <input id="plName" placeholder="Nom de la playlist">
-        <button id="plSave" class="primary">Enregistrer la playlist</button>
+      <select id="plFilter" title="Afficher seulement les vidéos d'une playlist"></select>
+      <div class="row two">
+        <select id="author"></select>
+        <select id="durFilter" title="Filtrer par durée">
+          <option value="">Toutes durées</option>
+          <option value="short">Courtes</option>
+          <option value="mid">Moyennes</option>
+          <option value="long">Longues</option>
+        </select>
       </div>
-      <div class="row pl">
-        <select id="plTarget"></select>
-        <button id="plAdd">Ajouter à la playlist</button>
-      </div>
-      <div id="plMsg"></div>
-      <select id="author"></select>
       <select id="sort">
         <option value="date-desc">Date ↓ (récent)</option>
         <option value="date-asc">Date ↑ (ancien)</option>
@@ -44,6 +44,15 @@
         <button id="selNone">Tout décocher</button>
         <button id="selDelete" class="danger">Supprimer la sélection</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
+      </div>
+      <div class="plbox">
+        <div class="row pl">
+          <input id="plName" placeholder="Nom de la nouvelle playlist">
+          <button id="plSave" class="primary">Enregistrer</button>
+        </div>
+        <select id="plTarget" title="Playlist qui recevra les vidéos cochées"></select>
+        <button id="plAdd">Ajouter les vidéos cochées à cette playlist</button>
+        <div id="plMsg"></div>
       </div>
       <div id="count"></div>
     </div>
@@ -78,6 +87,7 @@
       </div>
       <div class="row actions">
         <button id="plPlay" class="primary">▶ Lire</button>
+        <button id="plShow">Voir dans la bibliothèque</button>
         <button id="plLoad">Charger dans la sélection</button>
         <button id="plUpdate">Mettre à jour avec la sélection</button>
         <button id="plMove">Déplacer la playlist…</button>
