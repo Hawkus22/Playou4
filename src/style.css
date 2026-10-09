@@ -45,6 +45,8 @@ button.danger:hover { background:#4a1d24; }
 .smart-body { padding:0 12px 12px; display:flex; flex-direction:column; gap:8px; }
 .smart-body label { display:block; line-height:1.9; }
 .smart-body input[type=number] { width:56px; }
+.smart-body label.stack { display:flex; flex-direction:column; gap:4px; line-height:1.4; }
+.smart-body input[type=text] { width:100%; box-sizing:border-box; }
 #plList li.auto { border-style:dashed; }
 #plList { list-style:none; margin:0; padding:8px; display:flex; flex-direction:column; gap:6px; max-height:35%; overflow:auto; }
 #plList li { padding:10px 12px; border:1px solid var(--line); border-radius:8px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; }

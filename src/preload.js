@@ -3,6 +3,7 @@ const call = (ch) => (...a) => ipcRenderer.invoke(ch, ...a);
 contextBridge.exposeInMainWorld('playou4', {
   list: call('library:list'),
   reveal: call('library:reveal'),
+  trash: call('library:trash'),
   addFolder: call('folders:add'),
   removeFolder: call('folders:remove'),
   savePlaylist: call('playlists:save'),

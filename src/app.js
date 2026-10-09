@@ -306,19 +306,43 @@ async function showFile(p) {
   setTimeout(() => li.classList.remove('flash'), 2500);
 }
 
+// Met des vidéos à la Corbeille (récupérables), puis les retire des playlists et de la bibliothèque.
+async function deleteVideos(list) {
+  if (!list.length) return;
+  const msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ' + list.length + ' fichier(s) à la Corbeille ?';
+  if (!confirm(msg + '\n\nElles disparaîtront aussi des playlists (récupérables depuis la Corbeille Windows).')) return;
+  const video = $('video');
+  if (list.some((v) => v.id === current)) {
+    video.pause();
+    video.removeAttribute('src'); // libère le fichier pour que Windows puisse le supprimer
+    video.load();
+    current = null;
+    $('now').textContent = 'Aucune vidéo';
+  }
+  const r = await window.playou4.trash(list.map((v) => ({ id: v.id, path: v.path })));
+  const gone = new Set(r.deleted);
+  queue = queue.filter((v) => !gone.has(v.id));
+  checked = new Set([...checked].filter((id) => !gone.has(id)));
+  saveChecked();
+  if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
+  await reload();
+}
+
 // ---- Playlists intelligentes ---------------------------------------------------------------
 
-const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', auto: 'smAuto' };
+const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', folderAuthors: 'smFolders', auto: 'smAuto' };
 const SM_NUMS = { minAuthor: 'smMinAuthor', minKeyword: 'smMinKeyword', maxKeywords: 'smMaxKeywords', shortMax: 'smShort', longMin: 'smLong' };
 
 function fillSmart(o) {
   for (const [k, id] of Object.entries(SM_FLAGS)) $(id).checked = !!o[k];
   for (const [k, id] of Object.entries(SM_NUMS)) $(id).value = o[k];
+  $('smIgnore').value = o.ignore || '';
 }
 function readSmart() {
   const o = {};
   for (const [k, id] of Object.entries(SM_FLAGS)) o[k] = $(id).checked;
   for (const [k, id] of Object.entries(SM_NUMS)) o[k] = Number($(id).value);
+  o.ignore = $('smIgnore').value;
   return o;
 }
 
@@ -423,6 +447,11 @@ async function init() {
   $('playSel').onclick = () => playList(videos.filter((v) => checked.has(v.id)).sort(sorters[$('sort').value]));
   $('next').onclick = () => step(1);
   $('prev').onclick = () => step(-1);
+  $('del').onclick = () => {
+    const v = byId(current);
+    if (v) deleteVideos([v]);
+  };
+  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => checked.has(v.id)));
   $('reveal').onclick = () => {
     const v = byId(current);
     if (v) window.playou4.reveal(v.path);
@@ -468,7 +497,7 @@ async function init() {
     renderPlaylists();
     $('smMsg').textContent = 'Playlists automatiques supprimées.';
   };
-  for (const id of [...Object.values(SM_FLAGS), ...Object.values(SM_NUMS)]) {
+  for (const id of [...Object.values(SM_FLAGS), ...Object.values(SM_NUMS), 'smIgnore']) {
     $(id).onchange = async () => {
       settings = await window.playou4.setSettings({ smart: readSmart() });
       fillSmart(settings.smart);

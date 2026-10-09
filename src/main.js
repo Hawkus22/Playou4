@@ -35,6 +35,8 @@ function sanitizeSmart(v) {
     byKeyword: b(o.byKeyword, D.byKeyword),
     byDuration: b(o.byDuration, D.byDuration),
     auto: b(o.auto, D.auto),
+    folderAuthors: b(o.folderAuthors, D.folderAuthors),
+    ignore: typeof o.ignore === 'string' ? o.ignore.slice(0, 2000) : D.ignore,
     minAuthor: n(o.minAuthor, 2, 100, D.minAuthor),
     minKeyword: n(o.minKeyword, 2, 100, D.minKeyword),
     maxKeywords: n(o.maxKeywords, 1, 100, D.maxKeywords),
@@ -173,6 +175,7 @@ async function listVideos() {
         if (d && d.creator) store.meta[fp] = { creator: d.creator, date: d.finished_at || st.mtime.toISOString() };
         const m = store.meta[fp] || {};
         const parent = path.dirname(f);
+        const creatorSource = m.creator ? 'meta' : roots.includes(path.resolve(parent).toLowerCase()) ? 'none' : 'folder';
         const creator = m.creator || (roots.includes(path.resolve(parent).toLowerCase()) ? 'Inconnu' : path.basename(parent));
         let title = path.basename(f, path.extname(f));
         if (title.startsWith(`${creator} - `)) title = title.slice(creator.length + 3);
@@ -181,6 +184,7 @@ async function listVideos() {
           id: fp,
           title,
           creator,
+          creatorSource,
           date: m.date || st.mtime.toISOString(),
           size: st.size,
           duration: dur,
@@ -227,6 +231,38 @@ let win;
 
 ipcMain.handle('library:list', listVideos);
 ipcMain.handle('library:reveal', (_e, p) => shell.showItemInFolder(p));
+
+// Met des fichiers à la Corbeille (récupérables) ; ne touche que des fichiers de la bibliothèque.
+// Retire aussi ces vidéos des playlists, compteurs et caches. Retourne { deleted: [ids], failed: [messages] }.
+ipcMain.handle('library:trash', async (_e, items) => {
+  const roots = store.folders.map((f) => path.resolve(f).toLowerCase() + path.sep);
+  const deleted = [];
+  const failed = [];
+  for (const it of Array.isArray(items) ? items : []) {
+    const p = it && typeof it.path === 'string' ? path.resolve(it.path) : '';
+    const name = path.basename(p);
+    try {
+      if (!/\.mp4$/i.test(p) || !roots.some((r) => p.toLowerCase().startsWith(r))) throw new Error('hors de la bibliothèque');
+      if (fs.existsSync(p)) await shell.trashItem(p); // déjà absent : on nettoie quand même les données
+      deleted.push(it.id);
+    } catch (e) {
+      failed.push(name + ' : ' + e.message);
+    }
+  }
+  const gone = new Set(deleted);
+  for (const id of gone) {
+    delete store.plays[id];
+    delete store.meta[id];
+  }
+  for (const f of Object.keys(store.fpCache)) if (!fs.existsSync(f)) delete store.fpCache[f];
+  for (const n of Object.keys(store.playlists)) {
+    store.playlists[n] = store.playlists[n].filter((id) => !gone.has(id));
+    if (!store.playlists[n].length && store.autoPlaylists.includes(n)) delete store.playlists[n]; // « Auto » vide : inutile
+  }
+  store.autoPlaylists = store.autoPlaylists.filter((n) => n in store.playlists);
+  saveStore();
+  return { deleted, failed };
+});
 
 ipcMain.handle('folders:add', async () => {
   const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });

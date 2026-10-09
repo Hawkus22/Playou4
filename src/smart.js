@@ -16,6 +16,8 @@
     shortMax: 5, // minutes : en dessous = « courtes »
     longMin: 20, // minutes : à partir de = « longues »
     auto: false, // régénération automatique au lancement
+    folderAuthors: false, // les noms de dossiers comptent comme auteurs (sinon : auteurs réels uniquement)
+    ignore: '', // motifs à ignorer (auteurs, dossiers, mots) : séparés par virgule ou retour ligne, * = joker
   };
 
   // Mots trop courants pour être des thèmes (français, anglais, remplissage fréquent dans les titres).
@@ -47,6 +49,19 @@
     return out;
   }
 
+  /** Motifs d'exclusion « a, b*, *c » -> fonction (texte) => vrai si ignoré (insensible à la casse et aux accents). */
+  function ignorer(list) {
+    const res = String(list || "")
+      .split(/[,\n;]+/)
+      .map((p) => fold(p.trim()))
+      .filter(Boolean)
+      .map((p) => new RegExp('^' + p.split('*').map((x) => x.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$'));
+    return (text) => {
+      const t = fold(String(text));
+      return res.some((r) => r.test(t));
+    };
+  }
+
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
   /**
@@ -55,6 +70,7 @@
    */
   function generate(videos, options) {
     const o = { ...DEFAULTS, ...(options || {}) };
+    const ignored = ignorer(o.ignore);
     const playlists = {};
     const counts = { author: 0, keyword: 0, duration: 0 };
     const seen = new Set(); // signatures de contenu : pas deux playlists identiques
@@ -83,6 +99,8 @@
       const by = new Map();
       for (const v of videos) {
         if (!v.creator || v.creator === 'Inconnu') continue;
+        if (v.creatorSource === 'folder' && !o.folderAuthors) continue; // nom de dossier, pas un vrai auteur
+        if (ignored(v.creator)) continue;
         if (!by.has(v.creator)) by.set(v.creator, []);
         by.get(v.creator).push(v.id);
       }
@@ -98,7 +116,7 @@
       const df = new Map(); // mot -> { ids, forms }
       for (const v of videos) {
         for (const [key, shown] of words(v.title)) {
-          if (authorKeys.has(key)) continue;
+          if (authorKeys.has(key) || ignored(shown) || ignored(key)) continue;
           if (!df.has(key)) df.set(key, { ids: [], forms: new Map() });
           const e = df.get(key);
           e.ids.push(v.id);
@@ -120,5 +138,5 @@
     return { playlists, counts };
   }
 
-  return { generate, words, DEFAULTS, PREFIX };
+  return { generate, words, ignorer, DEFAULTS, PREFIX };
 });

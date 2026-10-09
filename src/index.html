@@ -42,6 +42,7 @@
       <div class="row">
         <button id="selAll">Tout cocher</button>
         <button id="selNone">Tout décocher</button>
+        <button id="selDelete" class="danger">Supprimer la sélection</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
       </div>
       <div id="count"></div>
@@ -57,6 +58,10 @@
         <label><input type="checkbox" id="smAuthor"> Par auteur (au moins <input id="smMinAuthor" type="number" min="2" max="100"> vidéos)</label>
         <label><input type="checkbox" id="smKeyword"> Par mots du titre (au moins <input id="smMinKeyword" type="number" min="2" max="100"> vidéos, <input id="smMaxKeywords" type="number" min="1" max="100"> listes au plus)</label>
         <label><input type="checkbox" id="smDuration"> Par durée (courtes sous <input id="smShort" type="number" min="1" max="600"> min, longues dès <input id="smLong" type="number" min="2" max="600"> min)</label>
+        <label><input type="checkbox" id="smFolders"> Utiliser aussi les noms de dossiers comme auteurs</label>
+        <label class="stack">Ignorer (auteurs, dossiers ou mots ; séparés par une virgule, * = joker)
+          <input id="smIgnore" type="text" placeholder="ex. Photos-*, Divers, 2023">
+        </label>
         <label><input type="checkbox" id="smAuto"> Mettre à jour automatiquement au lancement</label>
         <div class="row">
           <button id="smRun" class="primary">Générer / mettre à jour</button>
@@ -139,6 +144,7 @@
       <button id="playSel">▶ Lire la sélection</button>
       <label><input type="checkbox" id="shuffle"> Aléatoire</label>
       <button id="reveal">Ouvrir le dossier</button>
+      <button id="del" class="danger">Supprimer</button>
     </div>
   </div>
 </main>
