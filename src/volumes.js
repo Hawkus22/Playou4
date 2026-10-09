@@ -22,6 +22,7 @@ function relocateFolder(store, from, to) {
     delete store.folderVol[from];
   }
   store.disabledFolders = store.disabledFolders.map((f) => (f === from ? to : f));
+  if (Array.isArray(store.exclusions)) store.exclusions = store.exclusions.map((e) => (e.folder === from ? { ...e, folder: to } : e)); // sous-dossiers exclus : relatifs au dossier source
   for (const c of Object.values(store.catalog)) {
     if (c.folder === from) {
       c.folder = to;

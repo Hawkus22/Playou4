@@ -61,7 +61,7 @@
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
         <label><input type="checkbox" id="onlyDups"> Doublons</label>
         <label><input type="checkbox" id="hideOffline"> Masquer hors ligne</label>
-        <button id="dupClean" class="danger" hidden>Supprimer les copies en trop</button>
+        <button id="dupClean" class="danger" hidden>Supprimer les doublons…</button>
       </div>
       <div class="plbox">
         <div class="row pl">
@@ -123,6 +123,10 @@
       <p class="dim">Tous les .mp4 de ces dossiers (sous-dossiers inclus) apparaissent dans la bibliothèque. Chaque disque est reconnu par son numéro de série : donne-lui un nom, Playou4 voit tout seul s'il est branché (même si sa lettre change). Les doublons entre dossiers sont repérés.</p>
       <ul id="folderList"></ul>
       <button id="addFolder" class="primary">Ajouter un dossier…</button>
+      <h3>Sous-dossiers à exclure</h3>
+      <p class="dim">Pour exclure un sous-dossier précis, utilise le bouton « Exclure un sous-dossier… » sous le dossier source concerné. Pour ignorer des dossiers par leur nom, dans tous les dossiers sources :</p>
+      <input id="excludeNames" type="text" placeholder="ex. Photos-*, .thumbnails, Sauvegardes">
+      <p class="dim">Noms séparés par une virgule ; <b>*</b> = joker. Un dossier exclu n'est jamais analysé : ses vidéos sortent de la bibliothèque (elles ne passent pas « hors ligne »).</p>
       <h3>Lecture</h3>
       <div class="setting">
         <label for="wheelSeconds">Molette sur la vidéo : saut par cran</label>
@@ -192,12 +196,22 @@
     </div>
   </div>
 </main>
+<div id="dedupe" class="modal" hidden>
+  <div class="modal-box">
+    <h2>Supprimer les doublons</h2>
+    <p id="dedupeIntro" class="dim"></p>
+    <div id="dedupeChoices"></div>
+    <p id="dedupeResult"></p>
+    <div class="row end"><button id="dedupeCancel">Annuler</button><button id="dedupeGo" class="danger">Mettre à la Corbeille</button></div>
+  </div>
+</div>
 <div id="progress" hidden>
   <div id="progLabel"></div>
   <div class="track"><div id="progFill"></div></div>
   <div id="progPct"></div>
 </div>
 <script src="smart.js"></script>
+<script src="dedupe.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

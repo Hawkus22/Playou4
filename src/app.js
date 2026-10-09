@@ -243,9 +243,12 @@ async function moveVideos(all) {
 // ---- Réglages ------------------------------------------------------------
 
 let lastReach = '';
+let exclusionList = []; // sous-dossiers exclus : [{ folder, rel }]
+let folderInfos = []; // dossiers sources : [{ path, name, serial, connected… }]
 function fillFolders(folders) {
   const infos = (folders || []).map((f) => (typeof f === 'string' ? { path: f, enabled: true, connected: true } : f));
   // Signature des dossiers branchés (support + chemin actuel) : change quand un disque est (dé)branché ou change de lettre.
+  folderInfos = infos;
   lastReach = infos.map((f) => (f.enabled && f.connected ? f.path : '')).join('|');
   const online = infos.filter((f) => f.enabled && f.connected).length;
   $('srcSummary').textContent = `Dossiers sources (${online} connecté(s) sur ${infos.length})`;
@@ -282,6 +285,17 @@ function fillFolders(folders) {
     st.textContent = f.connected ? '● connecté' : '○ hors ligne : fichiers gardés en mémoire';
     li.append(st);
     if (settingsView) {
+      const ex = document.createElement('button');
+      ex.textContent = 'Exclure un sous-dossier…';
+      ex.title = 'Choisir un sous-dossier de ce dossier source à ne plus analyser';
+      ex.onclick = async () => {
+        const r = await window.playou4.addExclusion(f.path);
+        if (r && r.error) return alert(r.error);
+        exclusionList = Array.isArray(r) ? r : r.list || exclusionList;
+        fillFolders(await window.playou4.folderStatus());
+        await reload();
+      };
+      li.append(ex);
       const rm = document.createElement('button');
       rm.textContent = 'Retirer';
       rm.onclick = async () => apply(await window.playou4.removeFolder(f.path));
@@ -289,7 +303,31 @@ function fillFolders(folders) {
     }
     return li;
   };
-  $('folderList').replaceChildren(...infos.map((f) => row(f, true)));
+  const withExclusions = (f) => {
+    const li = row(f, true);
+    const mine = exclusionList.filter((e) => e.folder === f.path);
+    if (mine.length) {
+      const ul = document.createElement('ul');
+      ul.className = 'exlist';
+      for (const e of mine) {
+        const item = document.createElement('li');
+        const t = document.createElement('span');
+        t.textContent = '↳ exclu : ' + e.rel;
+        const back = document.createElement('button');
+        back.textContent = 'Rétablir';
+        back.onclick = async () => {
+          exclusionList = await window.playou4.removeExclusion(e.folder, e.rel);
+          fillFolders(await window.playou4.folderStatus());
+          await reload();
+        };
+        item.append(t, back);
+        ul.append(item);
+      }
+      li.append(ul);
+    }
+    return li;
+  };
+  $('folderList').replaceChildren(...infos.map(withExclusions));
   $('srcList').replaceChildren(...infos.map((f) => row(f, false)));
 }
 
@@ -351,6 +389,8 @@ async function reload() {
   $('author').append(new Option('Tous les auteurs', ''), ...authors.map((a) => new Option(a, a)));
   $('author').value = authors.includes(au) ? au : '';
   $('stats').textContent = `${videos.length} vidéo(s) dans la bibliothèque · ${Object.keys(playlists).length} playlist(s)`;
+  exclusionList = res.exclusions || [];
+  $('excludeNames').value = settings.excludeNames || '';
   fillFolders(res.folders);
   refresh();
   renderPlaylists();
@@ -399,6 +439,75 @@ async function deleteVideos(all) {
   saveChecked();
   if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
   await reload();
+}
+
+// ---- Suppression des doublons : choix du disque sur lequel on garde les fichiers -------------------
+
+/** Dossier source (et donc disque) qui contient ce fichier. */
+function sourceOf(p) {
+  const lp = p.toLowerCase();
+  return folderInfos.filter((f) => lp.startsWith(f.path.toLowerCase().replace(/[\\/]+$/, '') + '\\')).sort((a, b) => b.path.length - a.path.length)[0] || null;
+}
+const driveOf = (p) => (/^[A-Za-z]:/.test(p) ? p.slice(0, 2).toUpperCase() : '');
+function supportOf(p) {
+  const f = sourceOf(p);
+  if (!f) return { key: '?', label: 'Autre' };
+  return { key: f.serial || f.path, label: (f.name ? f.name + ' ' : '') + (driveOf(f.path) ? '(' + driveOf(f.path) + ')' : f.path) };
+}
+function folderOf(p) {
+  const f = sourceOf(p);
+  return f ? { key: f.path, label: f.path } : { key: '?', label: 'Autre' };
+}
+
+function openDedupe() {
+  // Groupes de doublons de la liste affichée : copies = la copie principale puis les autres
+  const groups = view.filter((v) => v.dups && v.dups.length).map((v) => ({ copies: [v.path, ...v.dups], size: v.size, title: v.title }));
+  if (!groups.length) return;
+  const { keyOf, level } = Dedupe.pickKeyOf(groups, supportOf, folderOf);
+  const sums = Dedupe.summarize(groups, keyOf);
+  let keep = sums[0].key; // par défaut : l'endroit qui contient le plus de ces fichiers
+  $('dedupeIntro').textContent = `${groups.length} fichier(s) existent en plusieurs exemplaires. Choisis le ${level} sur lequel tu GARDES les fichiers : les copies des autres ${level === 'disque' ? 'disques' : 'dossiers'} iront à la Corbeille Windows (récupérables).`;
+  const box = $('dedupeChoices');
+  const refresh = () => {
+    const p = Dedupe.plan(groups, keyOf, keep);
+    box.querySelectorAll('.choice').forEach((el) => el.classList.toggle('on', el.dataset.key === keep));
+    const others = sums.filter((x) => x.key !== keep).map((x) => x.label).join(', ');
+    $('dedupeResult').innerHTML = `Garder sur <b>${sums.find((x) => x.key === keep).label}</b>` + (others ? ` · supprimer sur <b>${others}</b>` : '') +
+      `<br>${p.paths.length} copie(s) à la Corbeille (${fmtSize(p.bytes)} libérés)` + (p.fallback ? ` · ${p.fallback} fichier(s) n'ont aucune copie sur ce ${level} : leur première copie est conservée` : '');
+    $('dedupeGo').disabled = !p.paths.length;
+    $('dedupeGo').textContent = `Mettre ${p.paths.length} copie(s) à la Corbeille`;
+  };
+  box.replaceChildren(
+    ...sums.map((x) => {
+      const row = document.createElement('label');
+      row.className = 'choice';
+      row.dataset.key = x.key;
+      const r = document.createElement('input');
+      r.type = 'radio';
+      r.name = 'dedupeKeep';
+      r.checked = x.key === keep;
+      r.onchange = () => {
+        keep = x.key;
+        refresh();
+      };
+      const t = document.createElement('div');
+      t.innerHTML = `<b></b><div class="n">${x.files} fichier(s) concerné(s) · ${fmtSize(x.bytes)}</div>`;
+      t.querySelector('b').textContent = x.label;
+      row.append(r, t);
+      return row;
+    })
+  );
+  refresh();
+  $('dedupe').hidden = false;
+  $('dedupeCancel').onclick = () => ($('dedupe').hidden = true);
+  $('dedupeGo').onclick = async () => {
+    const p = Dedupe.plan(groups, keyOf, keep);
+    $('dedupeGo').disabled = true;
+    const r = await window.playou4.trashCopies(p.paths);
+    $('dedupe').hidden = true;
+    if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
+    await reload();
+  };
 }
 
 // ---- Playlists intelligentes ---------------------------------------------------------------
@@ -581,6 +690,10 @@ async function init() {
     alert(`Fichier de playlists déplacé vers :\n${r.path}\n\nL'ancien fichier (${r.old}) n'est pas supprimé.`);
   };
 
+  $('excludeNames').onchange = async () => {
+    settings = await window.playou4.setSettings({ excludeNames: $('excludeNames').value });
+    await reload();
+  };
   $('addFolder').onclick = async () => {
     fillFolders(await window.playou4.addFolder());
     await reload();
@@ -589,16 +702,7 @@ async function init() {
   $('playSel').onclick = () => playList(videos.filter((v) => checked.has(v.id)).sort(sorters[$('sort').value]));
   $('next').onclick = () => step(1);
   $('prev').onclick = () => step(-1);
-  $('dupClean').onclick = async () => {
-    const withCopies = view.filter((v) => v.dups && v.dups.length);
-    const paths = withCopies.flatMap((v) => v.dups);
-    if (!paths.length) return;
-    const bytes = withCopies.reduce((sum, v) => sum + v.size * v.dups.length, 0);
-    if (!confirm(`Mettre ${paths.length} copie(s) en trop à la Corbeille (${fmtSize(bytes)} libérés) ?\n\nDans chaque groupe, la copie du premier dossier de la liste est conservée.`)) return;
-    const r = await window.playou4.trashCopies(paths);
-    if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
-    await reload();
-  };
+  $('dupClean').onclick = () => openDedupe();
   $('srcRefresh').onclick = reload;
   // Au retour dans la fenêtre : si un disque a été (re)branché ou débranché, la bibliothèque se met à jour.
   window.addEventListener('focus', async () => {

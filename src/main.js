@@ -22,8 +22,8 @@ const DEFAULT_STORE = path.join(app.getPath('userData'), 'store.json');
 let storePath = DEFAULT_STORE;
 let store;
 
-const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], folderVol: {}, volumes: {}, catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, excludeNames: '', langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], exclusions: [], folderVol: {}, volumes: {}, catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 
 // Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
@@ -58,6 +58,8 @@ function readStoreFile(file) {
   if (!Array.isArray(s.autoPlaylists)) s.autoPlaylists = [];
   if (!s.lang || typeof s.lang !== 'object') s.lang = {};
   if (!Array.isArray(s.disabledFolders)) s.disabledFolders = [];
+  if (!Array.isArray(s.exclusions)) s.exclusions = [];
+  if (typeof s.settings.excludeNames !== 'string') s.settings.excludeNames = '';
   if (!s.catalog || typeof s.catalog !== 'object') s.catalog = {};
   if (!s.folderVol || typeof s.folderVol !== 'object') s.folderVol = {};
   if (!s.volumes || typeof s.volumes !== 'object') s.volumes = {};
@@ -101,7 +103,7 @@ function progress(label, done, total, force = false) {
   if (win && !win.isDestroyed()) win.webContents.send('progress', { label, done, total });
 }
 
-async function walk(dir, out) {
+async function walk(dir, out, skip = () => false) {
   let entries;
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
@@ -111,7 +113,7 @@ async function walk(dir, out) {
   for (const e of entries) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (e.name !== 'node_modules' && !e.name.startsWith('$')) await walk(p, out);
+      if (e.name !== 'node_modules' && !e.name.startsWith('$') && !skip(p, e.name)) await walk(p, out, skip); // sous-dossier exclu : jamais parcouru
     } else if (e.isFile() && e.name.toLowerCase().endsWith('.mp4')) out.push(p);
   }
 }
@@ -248,7 +250,10 @@ async function listVideos() {
   const folders = await scannableFolders();
   const found = [];
   progress('Recherche des fichiers mp4…', 0, 0, true);
-  for (const f of folders) await walk(f, found);
+  const namesIgnored = Smart.ignorer(store.settings.excludeNames);
+  const excludedDirs = new Set(store.exclusions.map((e) => path.resolve(path.join(e.folder, e.rel)).toLowerCase()));
+  const skip = (p, name) => namesIgnored(name) || excludedDirs.has(path.resolve(p).toLowerCase());
+  for (const f of folders) await walk(f, found, skip);
   // Dossiers imbriqués : un même fichier ne doit pas être compté deux fois.
   const files = [...new Map(found.map((f) => [path.resolve(f).toLowerCase(), f])).values()];
   const total = files.length;
@@ -329,7 +334,7 @@ async function listVideos() {
   for (const [fp, c] of Object.entries(store.catalog)) {
     if (seen.has(fp)) continue;
     // Dossier retiré de la liste, ou dossier accessible dont le fichier a disparu (supprimé / déplacé) : on oublie.
-    if (!c.folder || !store.folders.includes(c.folder) || folders.includes(c.folder)) {
+    if (!c.folder || !store.folders.includes(c.folder) || folders.includes(c.folder) || isExcludedPath(c.path, c.folder)) {
       delete store.catalog[fp];
       continue;
     }
@@ -339,7 +344,7 @@ async function listVideos() {
   }
 
   saveStore();
-  return { videos, folders: await folderInfo(), playlists: store.playlists, auto: store.autoPlaylists, settings: store.settings };
+  return { videos, folders: await folderInfo(), exclusions: exclusionInfo(), playlists: store.playlists, auto: store.autoPlaylists, settings: store.settings };
 }
 
 // Déplace un fichier ; entre deux disques, copie par flux avec progression (onBytes reçoit les octets copiés).
@@ -430,6 +435,50 @@ ipcMain.handle('lang:cancel', () => {
   if (langJob) langJob.cancelled = true;
 });
 
+// ---- Exclusions de sous-dossiers ---------------------------------------------------------------
+// Deux méthodes : un sous-dossier choisi dans le sélecteur (stocké relatif à son dossier source, donc il suit le disque
+// si sa lettre change) et des noms de dossiers à ignorer partout (settings.excludeNames, « * » = joker).
+
+const exclusionInfo = () => store.exclusions.map((e) => ({ folder: e.folder, rel: e.rel }));
+
+/** Le chemin `p` est-il dans un sous-dossier exclu (choisi ou par nom) ? `root` : son dossier source. */
+function isExcludedPath(p, root) {
+  const lp = path.resolve(p).toLowerCase();
+  for (const e of store.exclusions) {
+    const ex = path.resolve(path.join(e.folder, e.rel)).toLowerCase();
+    if (lp === ex || lp.startsWith(ex + path.sep)) return true;
+  }
+  const names = Smart.ignorer(store.settings.excludeNames);
+  if (!root) return false;
+  const rel = path.relative(path.resolve(root), path.dirname(path.resolve(p)));
+  return rel.split(path.sep).some((seg) => seg && !seg.startsWith('..') && names(seg));
+}
+
+ipcMain.handle('exclusions:list', () => exclusionInfo());
+// Sans `picked` : ouvre le sélecteur de dossier (départ : le dossier source). Avec `picked` : chemin déjà choisi (tests).
+ipcMain.handle('exclusions:add', async (_e, folder, picked) => {
+  if (!store.folders.includes(folder)) return exclusionInfo();
+  let dir = picked;
+  if (!dir) {
+    const r = await dialog.showOpenDialog(win, { title: 'Sous-dossier à exclure', defaultPath: folder, properties: ['openDirectory'] });
+    if (r.canceled) return exclusionInfo();
+    dir = r.filePaths[0];
+  }
+  const rel = path.relative(path.resolve(folder), path.resolve(dir));
+  // Doit être strictement à l'intérieur du dossier source (pas lui-même, pas ailleurs)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return { error: 'Choisis un sous-dossier situé dans ce dossier source.', list: exclusionInfo() };
+  if (!store.exclusions.some((e) => e.folder === folder && e.rel.toLowerCase() === rel.toLowerCase())) {
+    store.exclusions.push({ folder, rel });
+    saveStore();
+  }
+  return { list: exclusionInfo() };
+});
+ipcMain.handle('exclusions:remove', (_e, folder, rel) => {
+  store.exclusions = store.exclusions.filter((e) => !(e.folder === folder && e.rel === rel));
+  saveStore();
+  return exclusionInfo();
+});
+
 ipcMain.handle('library:reveal', (_e, p) => shell.showItemInFolder(p));
 
 // Met des fichiers à la Corbeille (récupérables) ; ne touche que des fichiers de la bibliothèque.
@@ -478,6 +527,7 @@ ipcMain.handle('folders:remove', (_e, f) => {
   store.folders = store.folders.filter((x) => x !== f);
   store.disabledFolders = store.disabledFolders.filter((x) => x !== f);
   delete store.folderVol[f];
+  store.exclusions = store.exclusions.filter((e) => e.folder !== f);
   saveStore();
   return folderInfo();
 });
@@ -516,6 +566,7 @@ ipcMain.handle('settings:set', (_e, patch) => {
   const s = store.settings;
   if ('wheelSeconds' in patch) s.wheelSeconds = clamp(patch.wheelSeconds, 1, 600, s.wheelSeconds);
   if ('countPercent' in patch) s.countPercent = clamp(patch.countPercent, 1, 100, s.countPercent);
+  if ('excludeNames' in patch) s.excludeNames = String(patch.excludeNames || '').slice(0, 2000);
   if ('langAuto' in patch) s.langAuto = !!patch.langAuto;
   if ('langModel' in patch && ['tiny', 'base'].includes(patch.langModel)) s.langModel = patch.langModel;
   if ('smart' in patch) s.smart = sanitizeSmart({ ...s.smart, ...patch.smart });
