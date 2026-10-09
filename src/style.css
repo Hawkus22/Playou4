@@ -21,6 +21,12 @@ button.danger:hover { background:#4a1d24; }
 .tools { padding:10px; display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--line); max-height:62vh; overflow:auto; flex:none; }
 .tools .two { flex:1 1 100%; flex-wrap:nowrap; }
 .tools .two select { flex:1; min-width:0; }
+.src { flex:1 1 100%; border:1px solid var(--line); border-radius:8px; background:#1b1d26; padding:0 10px 8px; }
+.src summary { padding:8px 0; cursor:pointer; font-weight:600; }
+#srcList { list-style:none; margin:0 0 6px; padding:0; }
+#srcList li, #folderList li label { display:flex; gap:8px; align-items:center; padding:3px 0; word-break:break-all; }
+.absent { color:#e0a020; font-size:12px; white-space:nowrap; }
+#dupClean[hidden] { display:none; }
 .plbox { flex:1 1 100%; display:flex; flex-direction:column; gap:6px; padding-top:8px; border-top:1px dashed var(--line); }
 .plbox select, .plbox button { flex:0 0 auto; width:100%; }
 .plbox .pl button { width:auto; }

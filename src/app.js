@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('fr-FR');
 const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : Math.round(b / 1048576) + ' Mo');
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
-const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)} · ▶ ${v.plays}`;
+const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' : ''} · ▶ ${v.plays}`;
 
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
@@ -53,6 +53,7 @@ function fillVideoList(ul, list, { withCheckbox }) {
     const li = document.createElement('li');
     li.dataset.id = v.id;
     if (v.id === current) li.className = 'playing';
+    if (v.offline) li.classList.add('missing'); // disque absent : visible mais non lisible
     if (withCheckbox) {
       const cb = document.createElement('input');
       cb.type = 'checkbox';
@@ -71,14 +72,15 @@ function fillVideoList(ul, list, { withCheckbox }) {
     const t = document.createElement('div');
     t.className = 't';
     t.textContent = v.title;
-    t.title = v.title + '\n' + v.path;
+    t.title = v.title + '\n' + v.path + (v.dups && v.dups.length ? '\nCopies :\n' + v.dups.join('\n') : '');
     const s = document.createElement('div');
     s.className = 's';
     s.textContent = subline(v);
     meta.append(t, s);
     li.append(meta);
     li.onclick = () => {
-      queue = list.slice();
+      if (v.offline) return;
+      queue = list.filter((x) => !x.offline);
       play(v);
     };
     ul.append(li);
@@ -91,12 +93,16 @@ function refresh() {
   const pl = $('plFilter').value;
   const plIds = new Set(pl ? playlists[pl] || [] : []);
   const dur = $('durFilter').value;
+  const onlyDups = $('onlyDups').checked;
+  const hideOff = $('hideOffline').checked;
   const lg = $('langFilter').value;
   const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
     .filter((v) => {
       if (au && v.creator !== au) return false;
       if (pl && !plIds.has(v.id)) return false;
+      if (onlyDups && !(v.dups && v.dups.length)) return false;
+      if (hideOff && v.offline) return false;
       if (lg === 'fr' && v.lang !== 'fr') return false;
       if (lg === 'other' && (!v.lang || v.lang === 'fr' || v.lang === 'und')) return false;
       if (lg === 'und' && v.lang !== 'und') return false;
@@ -119,7 +125,9 @@ function refresh() {
 
 function count() {
   const n = videos.filter((v) => checked.has(v.id)).length;
-  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)`;
+  const nd = videos.filter((v) => v.dups && v.dups.length).length;
+  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
+  $('dupClean').hidden = !$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
 }
 
 function say(msg) {
@@ -146,7 +154,7 @@ function step(dir) {
 }
 
 function playList(list) {
-  queue = list.slice();
+  queue = list.filter((v) => !v.offline);
   if (queue.length) play($('shuffle').checked ? queue[Math.floor(Math.random() * queue.length)] : queue[0]);
 }
 
@@ -203,6 +211,7 @@ function renderPlaylists() {
   $('plTitle').textContent = activePl;
   $('plInfo').textContent =
     `${list.length} vidéo(s) · ${fmtSize(list.reduce((s, v) => s + v.size, 0))}` +
+    (list.some((v) => v.offline) ? ` · ${list.filter((v) => v.offline).length} hors ligne` : '') +
     (missing ? ` · ${missing} fichier(s) introuvable(s)` : '');
   fillVideoList($('plVideos'), list, { withCheckbox: false });
 }
@@ -215,7 +224,9 @@ async function savePlaylist(name, ids) {
 }
 
 // Déplace les fichiers vers un autre dossier/disque ; compteurs et playlists suivent grâce à l'empreinte.
-async function moveVideos(list) {
+async function moveVideos(all) {
+  const list = all.filter((v) => !v.offline);
+  if (all.length > list.length) alert(`${all.length - list.length} vidéo(s) hors ligne ignorée(s) : branche le disque pour les déplacer.`);
   if (!list.length) return;
   if (!confirm(`Déplacer ${list.length} fichier(s) vers un autre dossier ou disque ?\nLes compteurs de lecture et les playlists sont conservés.`)) return;
   const video = $('video');
@@ -231,20 +242,56 @@ async function moveVideos(list) {
 
 // ---- Réglages ------------------------------------------------------------
 
+let lastReach = '';
 function fillFolders(folders) {
-  const ul = $('folderList');
-  ul.textContent = '';
-  for (const f of folders) {
+  const infos = (folders || []).map((f) => (typeof f === 'string' ? { path: f, enabled: true, exists: true } : f));
+  lastReach = infos.map((f) => f.enabled && f.exists).join();
+  const active = infos.filter((f) => f.enabled).length;
+  $('srcSummary').textContent = `Dossiers sources (${active} / ${infos.length} actifs)`;
+  const toggle = async (f, on) => {
+    fillFolders(await window.playou4.toggleFolder(f, on));
+    await reload();
+  };
+  const row = (f, withRemove) => {
     const li = document.createElement('li');
-    const b = document.createElement('button');
-    b.textContent = 'Retirer';
-    b.onclick = async () => {
-      fillFolders(await window.playou4.removeFolder(f));
-      await reload();
-    };
-    li.append(f, b);
-    ul.append(li);
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = f.enabled;
+    cb.onchange = () => toggle(f.path, cb.checked);
+    const name = document.createElement('span');
+    name.textContent = f.path;
+    li.append(cb, name);
+    if (!f.exists) {
+      const a = document.createElement('span');
+      a.className = 'absent';
+      a.textContent = 'hors ligne (disque débranché ?) : fichiers gardés en mémoire';
+      li.append(a);
+    }
+    if (withRemove) {
+      const b = document.createElement('button');
+      b.textContent = 'Retirer';
+      b.onclick = async () => {
+        fillFolders(await window.playou4.removeFolder(f.path));
+        await reload();
+      };
+      li.append(b);
+    }
+    return li;
+  };
+  const settingsList = $('folderList');
+  settingsList.textContent = '';
+  for (const f of infos) {
+    const li = row(f, true);
+    // Réglages : case + nom regroupés à gauche, bouton « Retirer » à droite
+    const label = document.createElement('label');
+    label.append(...[...li.childNodes].filter((n) => n.tagName !== 'BUTTON'));
+    const holder = document.createElement('li');
+    holder.append(label, ...[...li.childNodes].filter((n) => n.tagName === 'BUTTON'));
+    settingsList.append(holder);
   }
+  const libList = $('srcList');
+  libList.textContent = '';
+  for (const f of infos) libList.append(row(f, false));
 }
 
 // ---- Barre de progression (analyse des dossiers, déplacements) -------------
@@ -332,7 +379,9 @@ async function showFile(p) {
 }
 
 // Met des vidéos à la Corbeille (récupérables), puis les retire des playlists et de la bibliothèque.
-async function deleteVideos(list) {
+async function deleteVideos(all) {
+  const list = all.filter((v) => !v.offline);
+  if (all.length > list.length) alert(`${all.length - list.length} vidéo(s) hors ligne ignorée(s) : branche le disque pour les supprimer.`);
   if (!list.length) return;
   const msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ' + list.length + ' fichier(s) à la Corbeille ?';
   if (!confirm(msg + '\n\nElles disparaîtront aussi des playlists (récupérables depuis la Corbeille Windows).')) return;
@@ -406,7 +455,7 @@ async function refreshLangUi() {
 }
 
 async function startLang(list) {
-  const items = list.filter((v) => !v.lang).map((v) => ({ id: v.id, path: v.path, duration: v.duration }));
+  const items = list.filter((v) => !v.lang && !v.offline).map((v) => ({ id: v.id, path: v.path, duration: v.duration }));
   if (!items.length) { $('langMsg').textContent = 'Rien à analyser : toutes ces vidéos ont déjà une langue.'; return; }
   const r = await window.playou4.langAnalyze(items);
   $('langMsg').textContent = r.started ? `Analyse de ${r.started} vidéo(s) en arrière-plan…` : 'Analyse impossible (moteur absent ou déjà en cours).';
@@ -451,7 +500,7 @@ async function initLang() {
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter'].forEach((id) => $(id).addEventListener('input', refresh));
+  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('input', refresh));
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();
@@ -541,6 +590,29 @@ async function init() {
   $('playSel').onclick = () => playList(videos.filter((v) => checked.has(v.id)).sort(sorters[$('sort').value]));
   $('next').onclick = () => step(1);
   $('prev').onclick = () => step(-1);
+  $('dupClean').onclick = async () => {
+    const withCopies = view.filter((v) => v.dups && v.dups.length);
+    const paths = withCopies.flatMap((v) => v.dups);
+    if (!paths.length) return;
+    const bytes = withCopies.reduce((sum, v) => sum + v.size * v.dups.length, 0);
+    if (!confirm(`Mettre ${paths.length} copie(s) en trop à la Corbeille (${fmtSize(bytes)} libérés) ?\n\nDans chaque groupe, la copie du premier dossier de la liste est conservée.`)) return;
+    const r = await window.playou4.trashCopies(paths);
+    if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
+    await reload();
+  };
+  $('srcRefresh').onclick = reload;
+  // Au retour dans la fenêtre : si un disque a été (re)branché ou débranché, la bibliothèque se met à jour.
+  window.addEventListener('focus', async () => {
+    const f = await window.playou4.folderStatus();
+    if (f.map((x) => x.enabled && x.exists).join() !== lastReach) {
+      fillFolders(f);
+      await reload();
+    }
+  });
+  $('srcAdd').onclick = async () => {
+    fillFolders(await window.playou4.addFolder());
+    await reload();
+  };
   $('del').onclick = () => {
     const v = byId(current);
     if (v) deleteVideos([v]);

@@ -19,6 +19,12 @@
   <section id="tab-library" class="active">
     <div class="tools">
       <input id="q" type="search" placeholder="Rechercher titre / auteur…">
+      <details id="srcBox" class="src">
+        <summary id="srcSummary">Dossiers sources</summary>
+        <ul id="srcList"></ul>
+        <button id="srcAdd" class="small">Ajouter un dossier…</button>
+        <button id="srcRefresh" class="small" title="Revérifier les disques">↻ Actualiser</button>
+      </details>
       <select id="plFilter" title="Afficher seulement les vidéos d'une playlist"></select>
       <div class="row two">
         <select id="author"></select>
@@ -53,6 +59,9 @@
         <button id="selNone">Tout décocher</button>
         <button id="selDelete" class="danger">Supprimer la sélection</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
+        <label><input type="checkbox" id="onlyDups"> Doublons</label>
+        <label><input type="checkbox" id="hideOffline"> Masquer hors ligne</label>
+        <button id="dupClean" class="danger" hidden>Supprimer les copies en trop</button>
       </div>
       <div class="plbox">
         <div class="row pl">
@@ -111,7 +120,7 @@
   <section id="tab-settings">
     <div class="pad">
       <h3>Dossiers analysés</h3>
-      <p class="dim">Tous les .mp4 de ces dossiers (sous-dossiers inclus) apparaissent dans la bibliothèque.</p>
+      <p class="dim">Tous les .mp4 des dossiers cochés (sous-dossiers inclus) apparaissent dans la bibliothèque. Décoche un disque externe débranché ; les doublons entre dossiers sont repérés.</p>
       <ul id="folderList"></ul>
       <button id="addFolder" class="primary">Ajouter un dossier…</button>
       <h3>Lecture</h3>

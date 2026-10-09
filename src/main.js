@@ -22,7 +22,7 @@ let storePath = DEFAULT_STORE;
 let store;
 
 const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 
 // Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
@@ -56,6 +56,8 @@ function readStoreFile(file) {
   s.settings.smart = sanitizeSmart(s.settings.smart);
   if (!Array.isArray(s.autoPlaylists)) s.autoPlaylists = [];
   if (!s.lang || typeof s.lang !== 'object') s.lang = {};
+  if (!Array.isArray(s.disabledFolders)) s.disabledFolders = [];
+  if (!s.catalog || typeof s.catalog !== 'object') s.catalog = {};
   if (!['tiny', 'base'].includes(s.settings.langModel)) s.settings.langModel = DEFAULT_SETTINGS.langModel;
   return s;
 }
@@ -157,47 +159,47 @@ async function cachedDuration(file, st) {
   return c.dur || 0;
 }
 
+// Dossiers sources : tous ceux de la liste ; seuls les dossiers cochés (actifs) sont analysés.
+const activeFolders = () => store.folders.filter((f) => !store.disabledFolders.includes(f));
+// Un disque débranché ou lent ne doit jamais bloquer l'application : test d'accès avec délai maximum de 3 s.
+const reachable = (f) =>
+  Promise.race([fsp.access(f).then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), 3000))]);
+const folderInfo = () =>
+  Promise.all(store.folders.map(async (f) => ({ path: f, enabled: !store.disabledFolders.includes(f), exists: await reachable(f) })));
+ipcMain.handle('folders:status', () => folderInfo());
+/** Dossiers cochés ET accessibles : les seuls analysés. */
+async function scannableFolders() {
+  const ok = await Promise.all(activeFolders().map(reachable));
+  return activeFolders().filter((_f, i) => ok[i]);
+}
+
 async function listVideos() {
-  const files = [];
+  const folders = await scannableFolders();
+  const found = [];
   progress('Recherche des fichiers mp4…', 0, 0, true);
-  for (const f of store.folders) await walk(f, files);
+  for (const f of folders) await walk(f, found);
+  // Dossiers imbriqués : un même fichier ne doit pas être compté deux fois.
+  const files = [...new Map(found.map((f) => [path.resolve(f).toLowerCase(), f])).values()];
   const total = files.length;
   let done = 0;
   const y4 = you4Meta();
   const roots = store.folders.map((f) => path.resolve(f).toLowerCase());
-  const byFp = new Map();
+  // Rang d'un fichier selon l'ordre des dossiers sources : la copie conservée est celle du premier dossier.
+  const rank = (f) => {
+    const p = path.resolve(f).toLowerCase();
+    const i = folders.findIndex((r) => p.startsWith(path.resolve(r).toLowerCase() + path.sep));
+    return i < 0 ? 999 : i;
+  };
+  // Empreinte -> fichiers : plusieurs fichiers pour une même empreinte = même contenu à plusieurs endroits (doublons).
+  const groups = new Map();
   const queue = files.slice();
-  const worker = async () => {
+  const scan = async () => {
     for (let f; (f = queue.shift()); ) {
-      let st;
       try {
-        st = await fsp.stat(f);
+        const st = await fsp.stat(f);
         const fp = await fingerprint(f, st);
-        if (byFp.has(fp)) continue; // doublon exact : une seule entrée
-        const dur = await cachedDuration(f, st);
-        const d = y4.get(f.toLowerCase());
-        if (d && d.creator) store.meta[fp] = { creator: d.creator, date: d.finished_at || st.mtime.toISOString() };
-        const m = store.meta[fp] || {};
-        const parent = path.dirname(f);
-        const creatorSource = m.creator ? 'meta' : roots.includes(path.resolve(parent).toLowerCase()) ? 'none' : 'folder';
-        const creator = m.creator || (roots.includes(path.resolve(parent).toLowerCase()) ? 'Inconnu' : path.basename(parent));
-        let title = path.basename(f, path.extname(f));
-        if (title.startsWith(`${creator} - `)) title = title.slice(creator.length + 3);
-        const p = store.plays[fp] || {};
-        byFp.set(fp, {
-          id: fp,
-          title,
-          creator,
-          creatorSource,
-          date: m.date || st.mtime.toISOString(),
-          size: st.size,
-          duration: dur,
-          lang: (store.lang[fp] || {}).l || null,
-          url: pathToFileURL(f).href,
-          path: f,
-          plays: p.count || 0,
-          last: p.last || null,
-        });
+        if (!groups.has(fp)) groups.set(fp, []);
+        groups.get(fp).push({ f, st });
       } catch {
         /* fichier disparu ou illisible */
       } finally {
@@ -205,10 +207,68 @@ async function listVideos() {
       }
     }
   };
-  await Promise.all(Array.from({ length: 8 }, worker));
+  await Promise.all(Array.from({ length: 8 }, scan));
   progress('Analyse des vidéos', total, total, true);
+
+  const videos = [];
+  const keys = [...groups.keys()];
+  const build = async () => {
+    for (let fp; (fp = keys.shift()); ) {
+      const list = groups.get(fp);
+      list.sort((a, b) => rank(a.f) - rank(b.f) || a.f.localeCompare(b.f));
+      const { f, st } = list[0];
+      const dur = await cachedDuration(f, st);
+      const d = y4.get(f.toLowerCase());
+      if (d && d.creator) store.meta[fp] = { creator: d.creator, date: d.finished_at || st.mtime.toISOString() };
+      const m = store.meta[fp] || {};
+      const parent = path.dirname(f);
+      const creatorSource = m.creator ? 'meta' : roots.includes(path.resolve(parent).toLowerCase()) ? 'none' : 'folder';
+      const creator = m.creator || (roots.includes(path.resolve(parent).toLowerCase()) ? 'Inconnu' : path.basename(parent));
+      let title = path.basename(f, path.extname(f));
+      if (title.startsWith(`${creator} - `)) title = title.slice(creator.length + 3);
+      const p = store.plays[fp] || {};
+      videos.push({
+        id: fp,
+        title,
+        creator,
+        creatorSource,
+        date: m.date || st.mtime.toISOString(),
+        size: st.size,
+        duration: dur,
+        lang: (store.lang[fp] || {}).l || null,
+        url: pathToFileURL(f).href,
+        path: f,
+        dups: list.slice(1).map((x) => x.f), // autres copies du même contenu
+        plays: p.count || 0,
+        last: p.last || null,
+      });
+    }
+  };
+  await Promise.all(Array.from({ length: 8 }, build));
+
+  // Catalogue : on retient chaque vidéo vue (nom, durée, auteur…) pour la garder visible quand son disque est débranché.
+  const sourceOf = (p) => {
+    const lp = path.resolve(p).toLowerCase() + path.sep;
+    return store.folders.filter((r) => lp.startsWith(path.resolve(r).toLowerCase() + path.sep)).sort((a, b) => b.length - a.length)[0] || null;
+  };
+  for (const v of videos) {
+    store.catalog[v.id] = { title: v.title, creator: v.creator, creatorSource: v.creatorSource, date: v.date, size: v.size, duration: v.duration, path: v.path, folder: sourceOf(v.path) };
+  }
+  const seen = new Set(videos.map((v) => v.id));
+  for (const [fp, c] of Object.entries(store.catalog)) {
+    if (seen.has(fp)) continue;
+    // Dossier retiré de la liste, ou dossier accessible dont le fichier a disparu (supprimé / déplacé) : on oublie.
+    if (!c.folder || !store.folders.includes(c.folder) || folders.includes(c.folder)) {
+      delete store.catalog[fp];
+      continue;
+    }
+    // Dossier décoché ou disque absent : la vidéo reste dans la bibliothèque et les playlists, grisée « hors ligne ».
+    const p = store.plays[fp] || {};
+    videos.push({ id: fp, ...c, offline: true, url: null, dups: [], lang: (store.lang[fp] || {}).l || null, plays: p.count || 0, last: p.last || null });
+  }
+
   saveStore();
-  return { videos: [...byFp.values()], folders: store.folders, playlists: store.playlists, auto: store.autoPlaylists, settings: store.settings };
+  return { videos, folders: await folderInfo(), playlists: store.playlists, auto: store.autoPlaylists, settings: store.settings };
 }
 
 // Déplace un fichier ; entre deux disques, copie par flux avec progression (onBytes reçoit les octets copiés).
@@ -323,6 +383,7 @@ ipcMain.handle('library:trash', async (_e, items) => {
     delete store.plays[id];
     delete store.meta[id];
     delete store.lang[id];
+    delete store.catalog[id];
   }
   for (const f of Object.keys(store.fpCache)) if (!fs.existsSync(f)) delete store.fpCache[f];
   for (const n of Object.keys(store.playlists)) {
@@ -340,12 +401,41 @@ ipcMain.handle('folders:add', async () => {
     store.folders.push(r.filePaths[0]);
     saveStore();
   }
-  return store.folders;
+  return folderInfo();
 });
 ipcMain.handle('folders:remove', (_e, f) => {
   store.folders = store.folders.filter((x) => x !== f);
+  store.disabledFolders = store.disabledFolders.filter((x) => x !== f);
   saveStore();
-  return store.folders;
+  return folderInfo();
+});
+// Coche / décoche un dossier source (un dossier décoché n'est plus analysé : utile pour un disque externe débranché).
+ipcMain.handle('folders:toggle', (_e, f, enabled) => {
+  if (!store.folders.includes(f)) return folderInfo();
+  store.disabledFolders = store.disabledFolders.filter((x) => x !== f);
+  if (!enabled) store.disabledFolders.push(f);
+  saveStore();
+  return folderInfo();
+});
+
+// Met à la Corbeille des copies en trop (doublons) sans toucher aux données de la vidéo conservée.
+ipcMain.handle('library:trashCopies', async (_e, paths) => {
+  const roots = store.folders.map((f) => path.resolve(f).toLowerCase() + path.sep);
+  let deleted = 0;
+  const failed = [];
+  for (const raw of Array.isArray(paths) ? paths : []) {
+    const p = typeof raw === 'string' ? path.resolve(raw) : '';
+    try {
+      if (!/\.mp4$/i.test(p) || !roots.some((r) => p.toLowerCase().startsWith(r))) throw new Error('hors de la bibliothèque');
+      if (fs.existsSync(p)) await shell.trashItem(p);
+      delete store.fpCache[p];
+      deleted++;
+    } catch (e) {
+      failed.push(path.basename(p) + ' : ' + e.message);
+    }
+  }
+  saveStore();
+  return { deleted, failed };
 });
 
 // Réglages de lecture : pas de la molette (secondes) et seuil (% visionné) à partir duquel une vidéo est comptée lue.
