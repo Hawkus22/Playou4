@@ -61,7 +61,6 @@ async function resolveSources(store, mounted, reachable) {
     if (meta) {
       const roots = mounted.get(meta.serial);
       if (roots && roots.length) {
-        connected = true;
         // Même support sous une autre lettre : on suit le support, pas la lettre.
         const nowRoot = roots.find((r) => root && r.toLowerCase() === root.toLowerCase()) || roots[0];
         const np = meta.rel ? nowRoot + meta.rel : nowRoot;
@@ -70,6 +69,8 @@ async function resolveSources(store, mounted, reachable) {
           cur = np;
           changed = true;
         }
+        // Disque branché mais dossier introuvable (renommé, déplacé…) : « hors ligne », ses pistes restent en mémoire.
+        connected = await reachable(cur);
       } else {
         connected = false; // support absent (ou lettre prise par un autre disque)
       }
