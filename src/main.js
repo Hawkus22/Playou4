@@ -9,6 +9,7 @@ const updater = require('./updater');
 const Smart = require('./smart');
 const { readDuration } = require('./duration');
 const createLang = require('./lang');
+const Volumes = require('./volumes');
 const { pathToFileURL } = require('url');
 
 const YOU4_DB = path.join(app.getPath('appData'), 'You4', 'you4.db');
@@ -22,7 +23,7 @@ let storePath = DEFAULT_STORE;
 let store;
 
 const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], folderVol: {}, volumes: {}, catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 
 // Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
@@ -58,6 +59,8 @@ function readStoreFile(file) {
   if (!s.lang || typeof s.lang !== 'object') s.lang = {};
   if (!Array.isArray(s.disabledFolders)) s.disabledFolders = [];
   if (!s.catalog || typeof s.catalog !== 'object') s.catalog = {};
+  if (!s.folderVol || typeof s.folderVol !== 'object') s.folderVol = {};
+  if (!s.volumes || typeof s.volumes !== 'object') s.volumes = {};
   if (!['tiny', 'base'].includes(s.settings.langModel)) s.settings.langModel = DEFAULT_SETTINGS.langModel;
   return s;
 }
@@ -161,16 +164,84 @@ async function cachedDuration(file, st) {
 
 // Dossiers sources : tous ceux de la liste ; seuls les dossiers cochés (actifs) sont analysés.
 const activeFolders = () => store.folders.filter((f) => !store.disabledFolders.includes(f));
-// Un disque débranché ou lent ne doit jamais bloquer l'application : test d'accès avec délai maximum de 3 s.
-const reachable = (f) =>
-  Promise.race([fsp.access(f).then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), 3000))]);
-const folderInfo = () =>
-  Promise.all(store.folders.map(async (f) => ({ path: f, enabled: !store.disabledFolders.includes(f), exists: await reachable(f) })));
+// Un disque débranché ou lent ne doit jamais bloquer l'application : tout accès a un délai maximum de 3 s.
+const withTimeout = (p, fallback) => Promise.race([p, new Promise((r) => setTimeout(() => r(fallback), 3000))]);
+const reachable = (f) => withTimeout(fsp.access(f).then(() => true, () => false), false);
+// Sous Windows, `dev` est le numéro de série du volume (celui de la commande « vol »).
+const volumeSerial = (root) =>
+  withTimeout(
+    fsp.stat(root).then((st) => (st.dev ? st.dev.toString(16).toUpperCase().padStart(8, '0') : null), () => null),
+    null
+  );
+
+/** Volumes branchés en ce moment : numéro de série -> lettres de lecteur (plusieurs si le même volume est monté deux fois). */
+async function mountedVolumes() {
+  const roots = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map((l) => l + ':\\');
+  const serials = await Promise.all(roots.map(volumeSerial));
+  const map = new Map();
+  roots.forEach((r, i) => {
+    const s = serials[i];
+    if (!s) return;
+    if (!map.has(s)) map.set(s, []);
+    map.get(s).push(r);
+  });
+  return map;
+}
+
+/** Libellés Windows des volumes (lettre -> libellé), demandés une seule fois pour les supports pas encore nommés. */
+function volumeLabels() {
+  return new Promise((resolve) => {
+    const out = new Map();
+    let buf = '';
+    // DriveInfo répond en ~150 ms (Get-Volume prend plus de 8 s sur certains PC).
+    const cmd = "[IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady } | ForEach-Object { $_.Name.Substring(0,1) + '|' + $_.VolumeLabel }";
+    const p = require('child_process').spawn('powershell', ['-NoProfile', '-Command', cmd], { windowsHide: true });
+    const t = setTimeout(() => p.kill(), 10000);
+    p.stdout.on('data', (c) => (buf += c));
+    p.on('error', () => resolve(out));
+    p.on('close', () => {
+      clearTimeout(t);
+      for (const line of buf.split(/\r?\n/)) {
+        const [d, label] = line.split('|');
+        if (d && label && label.trim()) out.set(d.trim().toUpperCase(), label.trim());
+      }
+      resolve(out);
+    });
+  });
+}
+
+/**
+ * État des dossiers sources : supports reconnus par leur numéro de série (donc suivis même si la lettre change),
+ * connectés ou non, avec leur nom. Appelé à l'ouverture, à l'actualisation et au retour dans la fenêtre.
+ */
+async function folderInfo() {
+  const mounted = await mountedVolumes();
+  const { infos, changed } = await Volumes.resolveSources(store, mounted, reachable);
+  let named = false;
+  const missing = Volumes.unnamedSerials(store);
+  if (missing.length) {
+    const labels = await volumeLabels();
+    for (const serial of missing) {
+      const letter = ((mounted.get(serial) || [])[0] || '')[0];
+      store.volumes[serial] = { name: (letter && labels.get(letter)) || `Support ${serial.slice(-4)}` };
+      named = true;
+    }
+    for (const f of infos) if (f.serial && !f.name) f.name = store.volumes[f.serial].name;
+  }
+  if (changed || named) saveStore();
+  return infos.map((f) => ({ ...f, exists: f.connected }));
+}
 ipcMain.handle('folders:status', () => folderInfo());
-/** Dossiers cochés ET accessibles : les seuls analysés. */
+// Nom donné à un support (disque) : choisi une fois, retrouvé grâce au numéro de série.
+ipcMain.handle('volumes:rename', (_e, serial, name) => {
+  if (typeof serial !== 'string' || !/^[0-9A-F]{8}$/.test(serial)) return folderInfo();
+  store.volumes[serial] = { name: String(name || '').trim().slice(0, 60) || `Support ${serial.slice(-4)}` };
+  saveStore();
+  return folderInfo();
+});
+/** Dossiers cochés ET dont le support est branché : les seuls analysés. */
 async function scannableFolders() {
-  const ok = await Promise.all(activeFolders().map(reachable));
-  return activeFolders().filter((_f, i) => ok[i]);
+  return (await folderInfo()).filter((f) => f.enabled && f.connected).map((f) => f.path);
 }
 
 async function listVideos() {
@@ -264,7 +335,7 @@ async function listVideos() {
     }
     // Dossier décoché ou disque absent : la vidéo reste dans la bibliothèque et les playlists, grisée « hors ligne ».
     const p = store.plays[fp] || {};
-    videos.push({ id: fp, ...c, offline: true, url: null, dups: [], lang: (store.lang[fp] || {}).l || null, plays: p.count || 0, last: p.last || null });
+    videos.push({ id: fp, ...c, offline: true, support: (store.volumes[(store.folderVol[c.folder] || {}).serial] || {}).name || null, url: null, dups: [], lang: (store.lang[fp] || {}).l || null, plays: p.count || 0, last: p.last || null });
   }
 
   saveStore();
@@ -406,6 +477,7 @@ ipcMain.handle('folders:add', async () => {
 ipcMain.handle('folders:remove', (_e, f) => {
   store.folders = store.folders.filter((x) => x !== f);
   store.disabledFolders = store.disabledFolders.filter((x) => x !== f);
+  delete store.folderVol[f];
   saveStore();
   return folderInfo();
 });

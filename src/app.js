@@ -2,7 +2,7 @@ const $ = (id) => document.getElementById(id);
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('fr-FR');
 const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : Math.round(b / 1048576) + ' Mo');
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
-const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' : ''} · ▶ ${v.plays}`;
+const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' + (v.support ? ' (' + v.support + ')' : '') : ''} · ▶ ${v.plays}`;
 
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
@@ -244,54 +244,53 @@ async function moveVideos(all) {
 
 let lastReach = '';
 function fillFolders(folders) {
-  const infos = (folders || []).map((f) => (typeof f === 'string' ? { path: f, enabled: true, exists: true } : f));
-  lastReach = infos.map((f) => f.enabled && f.exists).join();
-  const active = infos.filter((f) => f.enabled).length;
-  $('srcSummary').textContent = `Dossiers sources (${active} / ${infos.length} actifs)`;
-  const toggle = async (f, on) => {
-    fillFolders(await window.playou4.toggleFolder(f, on));
+  const infos = (folders || []).map((f) => (typeof f === 'string' ? { path: f, enabled: true, connected: true } : f));
+  // Signature des dossiers branchés (support + chemin actuel) : change quand un disque est (dé)branché ou change de lettre.
+  lastReach = infos.map((f) => (f.enabled && f.connected ? f.path : '')).join('|');
+  const online = infos.filter((f) => f.enabled && f.connected).length;
+  $('srcSummary').textContent = `Dossiers sources (${online} connecté(s) sur ${infos.length})`;
+  const apply = async (list) => {
+    fillFolders(list);
     await reload();
   };
-  const row = (f, withRemove) => {
+  const row = (f, settingsView) => {
     const li = document.createElement('li');
     const cb = document.createElement('input');
     cb.type = 'checkbox';
+    cb.title = 'Analyser ce dossier (décocher = ignorer, même branché)';
     cb.checked = f.enabled;
-    cb.onchange = () => toggle(f.path, cb.checked);
-    const name = document.createElement('span');
-    name.textContent = f.path;
-    li.append(cb, name);
-    if (!f.exists) {
-      const a = document.createElement('span');
-      a.className = 'absent';
-      a.textContent = 'hors ligne (disque débranché ?) : fichiers gardés en mémoire';
-      li.append(a);
-    }
-    if (withRemove) {
-      const b = document.createElement('button');
-      b.textContent = 'Retirer';
-      b.onclick = async () => {
-        fillFolders(await window.playou4.removeFolder(f.path));
-        await reload();
-      };
+    cb.onchange = async () => apply(await window.playou4.toggleFolder(f.path, cb.checked));
+    li.append(cb);
+    if (f.serial && settingsView) {
+      const name = document.createElement('input');
+      name.type = 'text';
+      name.className = 'volname';
+      name.value = f.name || '';
+      name.title = 'Nom de ce disque (reconnu par son numéro de série ' + f.serial + ')';
+      name.onchange = async () => apply(await window.playou4.renameVolume(f.serial, name.value));
+      li.append(name);
+    } else if (f.name) {
+      const b = document.createElement('b');
+      b.textContent = f.name;
       li.append(b);
+    }
+    const p = document.createElement('span');
+    p.textContent = f.path;
+    li.append(p);
+    const st = document.createElement('span');
+    st.className = f.connected ? 'online' : 'absent';
+    st.textContent = f.connected ? '● connecté' : '○ hors ligne : fichiers gardés en mémoire';
+    li.append(st);
+    if (settingsView) {
+      const rm = document.createElement('button');
+      rm.textContent = 'Retirer';
+      rm.onclick = async () => apply(await window.playou4.removeFolder(f.path));
+      li.append(rm);
     }
     return li;
   };
-  const settingsList = $('folderList');
-  settingsList.textContent = '';
-  for (const f of infos) {
-    const li = row(f, true);
-    // Réglages : case + nom regroupés à gauche, bouton « Retirer » à droite
-    const label = document.createElement('label');
-    label.append(...[...li.childNodes].filter((n) => n.tagName !== 'BUTTON'));
-    const holder = document.createElement('li');
-    holder.append(label, ...[...li.childNodes].filter((n) => n.tagName === 'BUTTON'));
-    settingsList.append(holder);
-  }
-  const libList = $('srcList');
-  libList.textContent = '';
-  for (const f of infos) libList.append(row(f, false));
+  $('folderList').replaceChildren(...infos.map((f) => row(f, true)));
+  $('srcList').replaceChildren(...infos.map((f) => row(f, false)));
 }
 
 // ---- Barre de progression (analyse des dossiers, déplacements) -------------

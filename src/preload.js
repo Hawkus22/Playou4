@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('playou4', {
   removeFolder: call('folders:remove'),
   toggleFolder: call('folders:toggle'),
   folderStatus: call('folders:status'),
+  renameVolume: call('volumes:rename'),
   trashCopies: call('library:trashCopies'),
   savePlaylist: call('playlists:save'),
   applyAuto: call('playlists:applyAuto'),

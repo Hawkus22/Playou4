@@ -25,6 +25,10 @@ button.danger:hover { background:#4a1d24; }
 .src summary { padding:8px 0; cursor:pointer; font-weight:600; }
 #srcList { list-style:none; margin:0 0 6px; padding:0; }
 #srcList li, #folderList li label { display:flex; gap:8px; align-items:center; padding:3px 0; word-break:break-all; }
+.online { color:#2de0a5; font-size:12px; white-space:nowrap; }
+.volname { width:150px; }
+#folderList li { flex-wrap:wrap; }
+#srcList li { flex-wrap:wrap; }
 .absent { color:#e0a020; font-size:12px; white-space:nowrap; }
 #dupClean[hidden] { display:none; }
 .plbox { flex:1 1 100%; display:flex; flex-direction:column; gap:6px; padding-top:8px; border-top:1px dashed var(--line); }
