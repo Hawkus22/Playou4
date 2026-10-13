@@ -445,11 +445,16 @@ async function showFile(p) {
 }
 
 // Met des vidéos à la Corbeille (récupérables), puis les retire des playlists et de la bibliothèque.
-async function deleteVideos(all) {
+async function deleteVideos(all, fromSelection = false) {
   const list = all.filter((v) => !v.offline);
   if (all.length > list.length) alert(`${all.length - list.length} vidéo(s) hors ligne ignorée(s) : branche le disque pour les supprimer.`);
   if (!list.length) return;
-  const msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ' + list.length + ' fichier(s) à la Corbeille ?';
+  let msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ' + list.length + ' fichier(s) à la Corbeille ?';
+  if (fromSelection) {
+    const shown = new Set(view.map((v) => v.id));
+    const hidden = list.filter((v) => !shown.has(v.id)).length;
+    if (hidden) msg += `\n\nATTENTION : ${hidden} de ces fichiers sont cochés mais NON affichés (masqués par les filtres).`;
+  }
   if (!confirm(msg + '\n\nElles disparaîtront aussi des playlists (récupérables depuis la Corbeille Windows).')) return;
   const video = $('video');
   if (list.some((v) => v.id === current)) {
@@ -750,7 +755,7 @@ async function init() {
     const v = byId(current);
     if (v) deleteVideos([v]);
   };
-  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => checked.has(v.id)));
+  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => checked.has(v.id)), true);
   $('reveal').onclick = () => {
     const v = byId(current);
     if (v) window.playou4.reveal(v.path);
