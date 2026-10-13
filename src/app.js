@@ -81,7 +81,7 @@ function fillVideoList(ul, list, { withCheckbox }) {
     li.onclick = () => {
       if (v.offline) return;
       queue = list.filter((x) => !x.offline);
-      play(v);
+      play(v, false); // un clic sur un fichier le charge en pause (rien ne démarre par surprise) ; ▶ ou Espace pour lire
     };
     ul.append(li);
   }
@@ -136,11 +136,12 @@ function say(msg) {
 
 // ---- Lecture ---------------------------------------------------------------
 
-function play(v) {
+function play(v, autoplay = true) {
   current = v.id;
   counted = false;
   $('video').src = v.url;
-  $('video').play();
+  if (autoplay) $('video').play();
+  else $('video').pause();
   setNow(v);
   document.querySelectorAll('.vlist li').forEach((li) => li.classList.toggle('playing', li.dataset.id === current));
 }
@@ -789,6 +790,73 @@ async function init() {
   video.addEventListener('timeupdate', () => {
     if (!counted && video.duration > 0 && video.currentTime / video.duration >= settings.countPercent / 100) countPlay();
   });
+
+  // ---- Barre de lecture (en haut du lecteur) : remplace les contrôles intégrés, qui restent toujours en bas ----
+  const seek = $('vSeek');
+  let seeking = false;
+  const sync = () => {
+    const d = video.duration;
+    const ready = Number.isFinite(d) && d > 0;
+    seek.disabled = !ready;
+    if (!seeking) seek.value = ready ? Math.round((video.currentTime / d) * 1000) : 0;
+    $('vTime').textContent = ready ? `${fmtDur(video.currentTime)} / ${fmtDur(d)}` : '0:00 / 0:00';
+    $('vPlay').textContent = video.paused || video.ended ? '▶' : '⏸';
+    $('vMute').textContent = video.muted || video.volume === 0 ? '🔇' : '🔊';
+    if (document.activeElement !== $('vVol')) $('vVol').value = video.muted ? 0 : Math.round(video.volume * 100);
+    $('vRate').value = String(video.playbackRate);
+  };
+  ['timeupdate', 'durationchange', 'loadedmetadata', 'emptied', 'play', 'pause', 'ended', 'volumechange', 'ratechange'].forEach((n) => video.addEventListener(n, sync));
+  seek.addEventListener('input', () => {
+    seeking = true;
+    if (video.duration > 0) video.currentTime = (seek.value / 1000) * video.duration;
+  });
+  seek.addEventListener('change', () => {
+    seeking = false;
+    sync();
+  });
+  const togglePlay = () => {
+    if (!video.currentSrc) return;
+    if (video.paused) video.play();
+    else video.pause();
+  };
+  $('vPlay').onclick = togglePlay;
+  video.addEventListener('click', togglePlay);
+  $('vMute').onclick = () => (video.muted = !video.muted);
+  $('vVol').addEventListener('input', () => {
+    video.muted = false;
+    video.volume = $('vVol').value / 100;
+    try {
+      localStorage.setItem('volume', String(video.volume));
+    } catch {}
+  });
+  $('vRate').onchange = () => (video.playbackRate = Number($('vRate').value));
+  // Plein écran sur le conteneur (et non sur la vidéo) pour garder la barre visible, en haut.
+  const toggleFull = () => (document.fullscreenElement ? document.exitFullscreen() : $('stage').requestFullscreen());
+  $('vFull').onclick = toggleFull;
+  video.addEventListener('dblclick', toggleFull);
+  let idleTimer = null;
+  $('stage').addEventListener('mousemove', () => {
+    $('stage').classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => document.fullscreenElement && $('stage').classList.add('idle'), 2500);
+  });
+  document.addEventListener('fullscreenchange', () => $('stage').classList.remove('idle'));
+  // Clavier (hors champs de saisie) : Espace = lecture/pause, flèches = ±5 s.
+  document.addEventListener('keydown', (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(document.activeElement && document.activeElement.tagName)) return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      togglePlay();
+    } else if ((e.code === 'ArrowLeft' || e.code === 'ArrowRight') && video.duration > 0) {
+      e.preventDefault();
+      video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + (e.code === 'ArrowRight' ? 5 : -5)));
+    }
+  });
+  try {
+    const vol = Number(localStorage.getItem('volume'));
+    if (localStorage.getItem('volume') !== null && vol >= 0 && vol <= 1) video.volume = vol;
+  } catch {}
+  sync();
 
   $('smRun').onclick = runSmart;
   $('smClear').onclick = async () => {
