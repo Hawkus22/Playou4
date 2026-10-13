@@ -59,6 +59,7 @@
         <button id="selNone">Tout décocher</button>
         <button id="selDelete" class="danger">Supprimer la sélection</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
+        <button id="listRefresh" title="Réapplique les filtres : avec « Cochées », les vidéos décochées sortent de la liste">↻ Rafraîchir la liste</button>
         <label><input type="checkbox" id="onlyDups"> Doublons</label>
         <label><input type="checkbox" id="hideOffline"> Masquer hors ligne</label>
         <button id="dupClean" class="danger" hidden>Supprimer les doublons…</button>
@@ -183,10 +184,8 @@
 </aside>
 
 <main>
-  <video id="video" controls></video>
   <div id="bar">
-    <div id="now">Aucune vidéo</div>
-    <div class="row">
+    <div id="barButtons" class="row">
       <button id="prev">⏮</button>
       <button id="next">⏭</button>
       <button id="playSel">▶ Lire la sélection</button>
@@ -194,7 +193,12 @@
       <button id="reveal">Ouvrir le dossier</button>
       <button id="del" class="danger">Supprimer</button>
     </div>
+    <div id="barInfo">
+      <button id="copyAuthor" class="chip" title="Copier le nom de l'auteur" hidden>⧉</button>
+      <div id="now">Aucune vidéo</div>
+    </div>
   </div>
+  <video id="video" controls></video>
 </main>
 <div id="dedupe" class="modal" hidden>
   <div class="modal-box">

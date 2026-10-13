@@ -141,8 +141,35 @@ function play(v) {
   counted = false;
   $('video').src = v.url;
   $('video').play();
-  $('now').textContent = `${v.creator} — ${v.title}`;
+  setNow(v);
   document.querySelectorAll('.vlist li').forEach((li) => li.classList.toggle('playing', li.dataset.id === current));
+}
+
+// Infos de la vidéo en cours (sous les boutons) ; la pastille à gauche copie le nom de l'auteur.
+function setNow(v) {
+  $('now').textContent = v ? `${v.creator} — ${v.title}` : 'Aucune vidéo';
+  $('now').title = v ? `${v.creator} — ${v.title}` : '';
+  $('copyAuthor').hidden = !v || !v.creator;
+  $('copyAuthor').classList.remove('done');
+}
+
+async function copyAuthor() {
+  const v = byId(current);
+  if (!v || !v.creator) return;
+  try {
+    await navigator.clipboard.writeText(v.creator);
+  } catch {
+    const t = document.createElement('textarea'); // secours si le presse-papiers est refusé
+    t.value = v.creator;
+    document.body.append(t);
+    t.select();
+    document.execCommand('copy');
+    t.remove();
+  }
+  const b = $('copyAuthor');
+  b.classList.add('done');
+  b.textContent = '✓';
+  setTimeout(() => { b.classList.remove('done'); b.textContent = '⧉'; }, 1200);
 }
 
 function step(dir) {
@@ -430,7 +457,7 @@ async function deleteVideos(all) {
     video.removeAttribute('src'); // libère le fichier pour que Windows puisse le supprimer
     video.load();
     current = null;
-    $('now').textContent = 'Aucune vidéo';
+    setNow(null);
   }
   const r = await window.playou4.trash(list.map((v) => ({ id: v.id, path: v.path })));
   const gone = new Set(r.deleted);
@@ -608,7 +635,10 @@ async function initLang() {
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
-  ['q', 'author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('input', refresh));
+  $('q').addEventListener('input', refresh);
+  ['author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('change', refresh));
+  $('listRefresh').onclick = refresh;
+  $('copyAuthor').onclick = copyAuthor;
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();
