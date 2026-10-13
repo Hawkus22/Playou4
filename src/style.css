@@ -37,7 +37,15 @@ button.danger:hover { background:#4a1d24; }
 .plbox .pl { flex:0 0 auto; }
 .tools input[type=search], .tools select { flex:1 1 100%; }
 .tools input[type=date] { flex:1; min-width:0; }
-#count { color:var(--dim); font-size:12px; flex:1 1 100%; }
+#toolsBar { flex:none; display:flex; align-items:center; gap:6px; padding:6px 10px; border-bottom:1px solid var(--line); }
+#toolsBar button { flex:none; padding:4px 10px; }
+#toolsToggle[aria-pressed="true"] { border-color:var(--acc); background:#2a1f26; }
+#count { color:var(--dim); font-size:12px; flex:1; min-width:0; text-align:right; }
+/* Menu masqué par défaut : il passe par-dessus la liste (qui garde toute sa place) tant que la souris est dessus. */
+#tab-library { position:relative; }
+.tools.auto { position:absolute; left:0; right:0; top:44px; z-index:10; display:none; background:var(--panel); box-shadow:0 12px 28px #000c; max-height:calc(100% - 44px); }
+.tools.auto.open { display:flex; }
+.tools.pinned { position:static; display:flex; box-shadow:none; max-height:62vh; }
 
 .vlist { list-style:none; margin:0; padding:0; overflow:auto; flex:1; min-height:0; }
 .vlist li { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); cursor:pointer; }

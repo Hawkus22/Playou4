@@ -7,6 +7,9 @@ const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmt
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
 let queue = []; // ordre de lecture en cours
+// D'où vient la file : 'library' = liste affichée de la Bibliothèque (elle suit les filtres en direct, cochée ou non),
+// 'selection' = vidéos cochées (figées au moment du clic sur Lire), 'playlist' = playlist ouverte.
+let queueSource = 'library';
 let current = null; // id en lecture
 let counted = false; // lecture courante déjà comptée
 let checked = new Set();
@@ -81,6 +84,7 @@ function fillVideoList(ul, list, { withCheckbox }) {
     li.onclick = () => {
       if (v.offline) return;
       queue = list.filter((x) => !x.offline);
+      queueSource = withCheckbox ? 'library' : 'playlist';
       play(v, false); // un clic sur un fichier le charge en pause (rien ne démarre par surprise) ; ▶ ou Espace pour lire
     };
     ul.append(li);
@@ -119,6 +123,7 @@ function refresh() {
       return true;
     })
     .sort(sorters[$('sort').value]);
+  if (queueSource === 'library') queue = view.filter((v) => !v.offline); // lecture / aléatoire : toujours sur ce qui est affiché
   fillVideoList($('list'), view, { withCheckbox: true });
   count();
 }
@@ -127,7 +132,9 @@ function count() {
   const n = videos.filter((v) => checked.has(v.id)).length;
   const nd = videos.filter((v) => v.dups && v.dups.length).length;
   $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
-  $('dupClean').hidden = !$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
+  $('playSel').textContent = n ? `▶ Lire la sélection (${n})` : '▶ Lire la liste';
+  $('playSel').title = n ? 'Lit les vidéos cochées' : 'Aucune vidéo cochée : lit la liste affichée';
+  $('dupClean').hidden =!$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
 }
 
 function say(msg) {
@@ -181,8 +188,9 @@ function step(dir) {
   if (i >= 0 && i < queue.length) play(queue[i]);
 }
 
-function playList(list) {
+function playList(list, source = 'playlist') {
   queue = list.filter((v) => !v.offline);
+  queueSource = source;
   if (queue.length) play($('shuffle').checked ? queue[Math.floor(Math.random() * queue.length)] : queue[0]);
 }
 
@@ -644,6 +652,66 @@ async function init() {
   $('q').addEventListener('input', refresh);
   ['author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
+
+  // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
+  const panel = $('toolsPanel');
+  const bar = $('toolsBar');
+  let pinned = false;
+  let closeTimer = null;
+  try {
+    pinned = localStorage.getItem('toolsPinned') === '1';
+  } catch {}
+  const applyPin = () => {
+    panel.classList.toggle('pinned', pinned);
+    panel.classList.toggle('auto', !pinned);
+    panel.classList.remove('open');
+    $('toolsToggle').setAttribute('aria-pressed', String(pinned));
+  };
+  const openMenu = () => {
+    if (pinned) return;
+    clearTimeout(closeTimer);
+    panel.style.top = bar.offsetHeight + 'px'; // collé sous la barre : pas de trou où la souris perdrait le menu
+    panel.style.maxHeight = `calc(100% - ${bar.offsetHeight}px)`;
+    panel.classList.add('open');
+  };
+  const keepsOpen = () => {
+    // Une liste déroulante ou un champ de recherche qui a le focus garde le menu ouvert (sinon il se fermerait pendant le choix).
+    const a = document.activeElement;
+    return panel.contains(a) && (a.tagName === 'SELECT' || (a.tagName === 'INPUT' && /^(search|text|number)$/.test(a.type)));
+  };
+  const scheduleClose = () => {
+    if (pinned) return;
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      if (bar.matches(':hover') || panel.matches(':hover') || keepsOpen()) return;
+      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      panel.classList.remove('open');
+    }, 450);
+  };
+  [bar, panel].forEach((el) => {
+    el.addEventListener('mouseenter', openMenu);
+    el.addEventListener('mouseleave', scheduleClose);
+  });
+  panel.addEventListener('focusout', () => setTimeout(scheduleClose, 0));
+  panel.addEventListener('change', (e) => {
+    if (e.target.tagName === 'SELECT') e.target.blur(); // choix fait : la liste déroulante ne retient plus le menu
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && !pinned && panel.classList.contains('open')) {
+      if (panel.contains(document.activeElement)) document.activeElement.blur();
+      panel.classList.remove('open');
+    }
+  });
+  // Clic : garde le menu affiché (épinglé) ou le replie ; sans clic, il n'apparaît qu'au survol.
+  $('toolsToggle').onclick = () => {
+    pinned = !pinned;
+    try {
+      localStorage.setItem('toolsPinned', pinned ? '1' : '0');
+    } catch {}
+    applyPin();
+    if (!pinned) panel.classList.remove('open');
+  };
+  applyPin();
   $('copyAuthor').onclick = copyAuthor;
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
@@ -735,7 +803,12 @@ async function init() {
     await reload();
   };
 
-  $('playSel').onclick = () => playList(videos.filter((v) => checked.has(v.id)).sort(sorters[$('sort').value]));
+  // Des vidéos cochées : on lit cette sélection. Aucune cochée : on lit la liste affichée (avec Aléatoire, au hasard dedans).
+  $('playSel').onclick = () => {
+    const sel = videos.filter((v) => checked.has(v.id)).sort(sorters[$('sort').value]);
+    if (sel.length) playList(sel, 'selection');
+    else playList(view, 'library');
+  };
   $('next').onclick = () => step(1);
   $('prev').onclick = () => step(-1);
   $('dupClean').onclick = () => openDedupe();

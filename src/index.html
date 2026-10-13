@@ -17,7 +17,11 @@
   <button id="updateBanner" class="primary" hidden></button>
 
   <section id="tab-library" class="active">
-    <div class="tools">
+    <div id="toolsBar">
+      <button id="toolsToggle" title="Le menu (filtres, tri, playlists) s'affiche quand la souris passe ici. Clic : le garder affiché / le replier." aria-pressed="false">☰ Menu de sélection</button>
+      <div id="count"></div>
+    </div>
+    <div class="tools auto" id="toolsPanel">
       <input id="q" type="search" placeholder="Rechercher titre / auteur…">
       <details id="srcBox" class="src">
         <summary id="srcSummary">Dossiers sources</summary>
@@ -73,7 +77,6 @@
         <button id="plAdd">Ajouter les vidéos cochées à cette playlist</button>
         <div id="plMsg"></div>
       </div>
-      <div id="count"></div>
     </div>
     <ul id="list" class="vlist"></ul>
   </section>
