@@ -21,6 +21,16 @@ let settings = { wheelSeconds: 10, countPercent: 80 };
 try {
   checked = new Set(JSON.parse(localStorage.getItem('checked') || '[]'));
 } catch {}
+// Seconde case, rouge : vidéos marquées « à supprimer » (indépendante de la sélection de lecture).
+let toDelete = new Set();
+try {
+  toDelete = new Set(JSON.parse(localStorage.getItem('toDelete') || '[]'));
+} catch {}
+const saveToDelete = () => {
+  try {
+    localStorage.setItem('toDelete', JSON.stringify([...toDelete]));
+  } catch {}
+};
 const saveChecked = () => {
   try {
     localStorage.setItem('checked', JSON.stringify([...checked]));
@@ -68,7 +78,20 @@ function fillVideoList(ul, list, { withCheckbox }) {
         saveChecked();
         count();
       };
-      li.append(cb);
+      cb.title = 'Sélectionner (lecture, playlist, aléatoire)';
+      const dc = document.createElement('input');
+      dc.type = 'checkbox';
+      dc.className = 'delcb';
+      dc.title = 'Marquer à supprimer';
+      dc.checked = toDelete.has(v.id);
+      dc.onclick = (e) => {
+        e.stopPropagation();
+        if (dc.checked) toDelete.add(v.id);
+        else toDelete.delete(v.id);
+        saveToDelete();
+        count();
+      };
+      li.append(cb, dc);
     }
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -135,6 +158,10 @@ function count() {
   $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
   $('playSel').textContent = n ? `▶ Lire la sélection (${n})` : '▶ Lire la liste';
   $('playSel').title = n ? 'Lit les vidéos cochées' : 'Aucune vidéo cochée : lit la liste affichée';
+  const nDel = videos.filter((v) => toDelete.has(v.id)).length;
+  $('selDelete').textContent = nDel ? `Supprimer les ${nDel} marquée(s)` : 'Supprimer les marquées';
+  $('selDelete').title = nDel ? 'Met à la Corbeille les vidéos marquées de la case rouge (la liste est affichée avant confirmation)' : 'Aucune vidéo marquée : coche la case rouge à gauche d\'une vidéo';
+  $('delClear').hidden = !nDel;
   $('dupClean').hidden =!$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
 }
 
@@ -144,10 +171,20 @@ function say(msg) {
 
 // ---- Lecture ---------------------------------------------------------------
 
-function play(v, autoplay = true) {
+// Mémorise la vidéo en cours et la position pour la retrouver à la réouverture.
+const saveLast = (id, t) => {
+  try {
+    localStorage.setItem('lastPlayed', JSON.stringify({ id, t }));
+  } catch {}
+};
+let lastSaveAt = 0;
+
+function play(v, autoplay = true, startAt = 0) {
   current = v.id;
   counted = false;
+  saveLast(v.id, startAt);
   $('video').src = v.url;
+  if (startAt > 0) $('video').addEventListener('loadedmetadata', () => { $('video').currentTime = Math.min(startAt, Math.max(0, $('video').duration - 1)); }, { once: true });
   if (autoplay) $('video').play();
   else $('video').pause();
   setNow(v);
@@ -435,6 +472,7 @@ async function reload() {
   $('countPercent').value = settings.countPercent;
   const ids = new Set(videos.map((v) => v.id));
   checked = new Set([...checked].filter((id) => ids.has(id)));
+  toDelete = new Set([...toDelete].filter((id) => ids.has(id)));
   const au = $('author').value;
   const authors = [...new Set(videos.map((v) => v.creator))].sort((a, b) => a.localeCompare(b, 'fr'));
   $('author').textContent = '';
@@ -474,11 +512,11 @@ async function deleteVideos(all, fromSelection = false) {
   const list = all.filter((v) => !v.offline);
   if (all.length > list.length) alert(`${all.length - list.length} vidéo(s) hors ligne ignorée(s) : branche le disque pour les supprimer.`);
   if (!list.length) return;
-  let msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ' + list.length + ' fichier(s) à la Corbeille ?';
+  let msg = list.length === 1 ? 'Mettre « ' + list[0].title + ' » à la Corbeille ?' : 'Mettre ces ' + list.length + ' fichier(s) à la Corbeille ?\n\n' + list.slice(0, 20).map((v) => '• ' + v.creator + ' — ' + v.title).join('\n') + (list.length > 20 ? `\n… et ${list.length - 20} autre(s)` : '');
   if (fromSelection) {
     const shown = new Set(view.map((v) => v.id));
     const hidden = list.filter((v) => !shown.has(v.id)).length;
-    if (hidden) msg += `\n\nATTENTION : ${hidden} de ces fichiers sont cochés mais NON affichés (masqués par les filtres).`;
+    if (hidden) msg += `\n\nATTENTION : ${hidden} de ces fichiers sont marqués mais NON affichés (masqués par les filtres).`;
   }
   if (!confirm(msg + '\n\nElles disparaîtront aussi des playlists (récupérables depuis la Corbeille Windows).')) return;
   const video = $('video');
@@ -494,6 +532,8 @@ async function deleteVideos(all, fromSelection = false) {
   queue = queue.filter((v) => !gone.has(v.id));
   checked = new Set([...checked].filter((id) => !gone.has(id)));
   saveChecked();
+  toDelete = new Set([...toDelete].filter((id) => !gone.has(id)));
+  saveToDelete();
   if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
   await reload();
 }
@@ -845,7 +885,12 @@ async function init() {
     const v = byId(current);
     if (v) deleteVideos([v]);
   };
-  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => checked.has(v.id)), true);
+  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => toDelete.has(v.id)), true);
+  $('delClear').onclick = () => {
+    toDelete.clear();
+    saveToDelete();
+    refresh();
+  };
   $('reveal').onclick = () => {
     const v = byId(current);
     if (v) window.playou4.reveal(v.path);
@@ -879,6 +924,10 @@ async function init() {
     { passive: false }
   );
   video.addEventListener('timeupdate', () => {
+    if (current && Date.now() - lastSaveAt > 2000) {
+      lastSaveAt = Date.now();
+      saveLast(current, video.currentTime);
+    }
     if (!counted && video.duration > 0 && video.currentTime / video.duration >= settings.countPercent / 100) countPlay();
   });
 
@@ -970,6 +1019,17 @@ async function init() {
   await reload();
   await initLang();
   if (settings.smart.auto) runSmart(); // régénération au lancement
+  // Retour sur la dernière vidéo lue, à la même position, en pause.
+  try {
+    const last = JSON.parse(localStorage.getItem('lastPlayed') || 'null');
+    const v = last && byId(last.id);
+    if (v && !v.offline) {
+      queue = view.filter((x) => !x.offline);
+      queueSource = 'library';
+      play(v, false, last.t || 0);
+    }
+  } catch {}
+  window.addEventListener('beforeunload', () => current && saveLast(current, $('video').currentTime));
   const pending = await window.playou4.showPending();
   if (pending) showFile(pending);
 }
