@@ -120,6 +120,7 @@ function refresh() {
       }
       if (q && !(v.title + ' ' + v.creator).toLowerCase().includes(q)) return false;
       if ($('onlyChecked').checked && !checked.has(v.id)) return false;
+      if ($('onlyToday').checked && new Date(v.date).toDateString() !== new Date().toDateString()) return false;
       return true;
     })
     .sort(sorters[$('sort').value]);
@@ -180,10 +181,25 @@ async function copyAuthor() {
   setTimeout(() => { b.classList.remove('done'); b.textContent = '⧉'; }, 1200);
 }
 
+// Lecture fléchée : 0 = normale, -1 = vers le haut, 1 = vers le bas, dans la liste affichée (filtres compris).
+let autoDir = 0;
+function setAutoDir(d) {
+  autoDir = autoDir === d ? 0 : d; // un second clic sur la même flèche l'arrête
+  $('dirUp').classList.toggle('on', autoDir === -1);
+  $('dirDown').classList.toggle('on', autoDir === 1);
+  if (!autoDir) return;
+  queue = view.filter((v) => !v.offline);
+  queueSource = 'library';
+  if (!queue.length) return;
+  const cur = queue.find((v) => v.id === current);
+  play(cur || (autoDir > 0 ? queue[0] : queue[queue.length - 1]));
+}
+
 function step(dir) {
   if (!queue.length) return;
   let i = queue.findIndex((v) => v.id === current);
-  if ($('shuffle').checked && dir > 0) i = Math.floor(Math.random() * queue.length);
+  if (autoDir && dir === autoDir) i += dir;
+  else if ($('shuffle').checked && dir > 0) i = Math.floor(Math.random() * queue.length);
   else i += dir;
   if (i >= 0 && i < queue.length) play(queue[i]);
 }
@@ -650,7 +666,7 @@ async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
   $('q').addEventListener('input', refresh);
-  ['author', 'sort', 'onlyChecked', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('change', refresh));
+  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
 
   // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
@@ -719,7 +735,7 @@ async function init() {
     refresh();
   };
   $('selNone').onclick = () => {
-    view.forEach((v) => checked.delete(v.id));
+    checked.clear(); // décoche tout, même ce que les filtres masquent
     saveChecked();
     refresh();
   };
@@ -835,7 +851,9 @@ async function init() {
     if (v) window.playou4.reveal(v.path);
   };
   const video = $('video');
-  video.addEventListener('ended', () => step(1));
+  video.addEventListener('ended', () => step(autoDir || 1));
+  $('dirUp').onclick = () => setAutoDir(-1);
+  $('dirDown').onclick = () => setAutoDir(1);
 
   // Réglages de lecture : enregistrés à chaque modification, la valeur corrigée par le main est réaffichée.
   for (const key of ['wheelSeconds', 'countPercent']) {

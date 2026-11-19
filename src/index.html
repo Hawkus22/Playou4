@@ -63,6 +63,7 @@
         <button id="selNone">Tout décocher</button>
         <button id="selDelete" class="danger">Supprimer la sélection</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
+        <label title="Seulement les vidéos d'aujourd'hui"><input type="checkbox" id="onlyToday"> Vidéos du jour</label>
         <button id="listRefresh" title="Réapplique les filtres : avec « Cochées », les vidéos décochées sortent de la liste">↻ Rafraîchir la liste</button>
         <label><input type="checkbox" id="onlyDups"> Doublons</label>
         <label><input type="checkbox" id="hideOffline"> Masquer hors ligne</label>
@@ -191,6 +192,8 @@
     <div id="barButtons" class="row">
       <button id="prev">⏮</button>
       <button id="next">⏭</button>
+      <button id="dirUp" title="Lire cette vidéo puis celles du dessus (liste affichée)">⬆</button>
+      <button id="dirDown" title="Lire cette vidéo puis celles du dessous (liste affichée)">⬇</button>
       <button id="playSel">▶ Lire la sélection</button>
       <label><input type="checkbox" id="shuffle"> Aléatoire</label>
       <button id="reveal">Ouvrir le dossier</button>

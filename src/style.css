@@ -7,6 +7,7 @@ button:hover { border-color:var(--acc); }
 button.primary { background:var(--accent2); border-color:var(--accent2); }
 button.primary:hover { filter:brightness(1.15); }
 button.danger:hover { background:#4a1d24; }
+button.on { background:#1d4a2b; }
 .row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .dim { color:var(--dim); }
 
