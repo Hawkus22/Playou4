@@ -23,7 +23,7 @@ let storePath = DEFAULT_STORE;
 let store;
 
 const DEFAULT_SETTINGS = { wheelSeconds: 10, countPercent: 80, excludeNames: '', langAuto: false, langModel: 'base', smart: { ...Smart.DEFAULTS } };
-const emptyStore = () => ({ folders: [], plays: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], exclusions: [], folderVol: {}, volumes: {}, catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
+const emptyStore = () => ({ folders: [], plays: {}, ratings: {}, playlists: {}, autoPlaylists: [], disabledFolders: [], exclusions: [], folderVol: {}, volumes: {}, catalog: {}, lang: {}, meta: {}, fpCache: {}, settings: { ...DEFAULT_SETTINGS } });
 
 
 // Réglages du moteur de playlists intelligentes : types et bornes vérifiés.
@@ -53,6 +53,16 @@ function sanitizeSmart(v) {
 function readStoreFile(file) {
   const s = { ...emptyStore(), ...JSON.parse(fs.readFileSync(file, 'utf8')) };
   if (!s.folders.length) s.folders = [app.getPath('downloads')];
+  // 0.6.0 : échelle de niveaux 1 à 5. Premier chargement : sauvegarde du fichier, compteurs de lecture remis à zéro,
+  // toutes les vidéos « non classées » (pas d'entrée dans ratings).
+  if (!s.ratings || typeof s.ratings !== 'object') {
+    s.ratings = {};
+    s.plays = {};
+    try {
+      const bak = file + '.bak-avant-0.6.0';
+      if (!fs.existsSync(bak)) fs.copyFileSync(file, bak);
+    } catch {}
+  }
   s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
   s.settings.smart = sanitizeSmart(s.settings.smart);
   if (!Array.isArray(s.autoPlaylists)) s.autoPlaylists = [];
@@ -317,6 +327,7 @@ async function listVideos() {
         dups: list.slice(1).map((x) => x.f), // autres copies du même contenu
         plays: p.count || 0,
         last: p.last || null,
+        rating: store.ratings[fp] || null, // 1 à 5 ; null = non classée
       });
     }
   };
@@ -340,7 +351,7 @@ async function listVideos() {
     }
     // Dossier décoché ou disque absent : la vidéo reste dans la bibliothèque et les playlists, grisée « hors ligne ».
     const p = store.plays[fp] || {};
-    videos.push({ id: fp, ...c, offline: true, support: (store.volumes[(store.folderVol[c.folder] || {}).serial] || {}).name || null, url: null, dups: [], lang: (store.lang[fp] || {}).l || null, plays: p.count || 0, last: p.last || null });
+    videos.push({ id: fp, ...c, offline: true, support: (store.volumes[(store.folderVol[c.folder] || {}).serial] || {}).name || null, url: null, dups: [], lang: (store.lang[fp] || {}).l || null, plays: p.count || 0, last: p.last || null, rating: store.ratings[fp] || null });
   }
 
   saveStore();
@@ -501,6 +512,7 @@ ipcMain.handle('library:trash', async (_e, items) => {
   const gone = new Set(deleted);
   for (const id of gone) {
     delete store.plays[id];
+    delete store.ratings[id];
     delete store.meta[id];
     delete store.lang[id];
     delete store.catalog[id];
@@ -602,6 +614,16 @@ ipcMain.handle('playlists:delete', (_e, name) => {
   delete store.playlists[name];
   saveStore();
   return store.playlists;
+});
+
+// Niveau d'une vidéo (1 = à supprimer, 2 = Bof, 3 = moyen, 4 = très sympa, 5 = Top). Plusieurs d'un coup : { id: niveau }.
+ipcMain.handle('rating:set', (_e, map) => {
+  for (const [id, lv] of Object.entries(map || {})) {
+    const n = Math.round(+lv);
+    if (n >= 1 && n <= 5) store.ratings[id] = n;
+  }
+  saveStore();
+  return true;
 });
 
 // Une lecture est comptée côté interface (80 % visionné) ; l'empreinte garde le compteur après déplacement.

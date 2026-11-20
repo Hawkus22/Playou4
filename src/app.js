@@ -2,7 +2,10 @@ const $ = (id) => document.getElementById(id);
 const fmtDate = (iso) => new Date(iso).toLocaleDateString('fr-FR');
 const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : Math.round(b / 1048576) + ' Mo');
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
-const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' + (v.support ? ' (' + v.support + ')' : '') : ''} · ▶ ${v.plays}`;
+// Niveaux : 1 à supprimer · 2 Bof · 3 Moyen · 4 Très sympa · 5 Top. rating = null : non classée (affichée au niveau 3).
+const LEVELS = { 1: 'À supprimer', 2: 'Bof', 3: 'Moyen', 4: 'Très sympa', 5: 'Top' };
+const levelLabel = (r) => (r ? `${r} · ${LEVELS[r]}` : 'Non classée');
+const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' + (v.support ? ' (' + v.support + ')' : '') : ''} · ${levelLabel(v.rating)} · ▶ ${v.plays}`;
 
 let videos = [];
 let view = []; // liste filtrée/triée de la bibliothèque
@@ -21,16 +24,11 @@ let settings = { wheelSeconds: 10, countPercent: 80 };
 try {
   checked = new Set(JSON.parse(localStorage.getItem('checked') || '[]'));
 } catch {}
-// Seconde case, rouge : vidéos marquées « à supprimer » (indépendante de la sélection de lecture).
-let toDelete = new Set();
+// Ancienne case rouge « à supprimer » (≤ 0.5.x) : reprise une fois en niveau 1 au lancement, puis supprimée.
+let legacyDelete = [];
 try {
-  toDelete = new Set(JSON.parse(localStorage.getItem('toDelete') || '[]'));
+  legacyDelete = JSON.parse(localStorage.getItem('toDelete') || '[]');
 } catch {}
-const saveToDelete = () => {
-  try {
-    localStorage.setItem('toDelete', JSON.stringify([...toDelete]));
-  } catch {}
-};
 const saveChecked = () => {
   try {
     localStorage.setItem('checked', JSON.stringify([...checked]));
@@ -44,6 +42,8 @@ const sorters = {
   title: (a, b) => a.title.localeCompare(b.title, 'fr'),
   'size-desc': (a, b) => b.size - a.size,
   'size-asc': (a, b) => a.size - b.size,
+  'rating-desc': (a, b) => (b.rating || 3) - (a.rating || 3) || b.date.localeCompare(a.date),
+  'rating-asc': (a, b) => (a.rating || 3) - (b.rating || 3) || b.date.localeCompare(a.date),
   'plays-desc': (a, b) => b.plays - a.plays || b.date.localeCompare(a.date),
   'plays-asc': (a, b) => a.plays - b.plays || b.date.localeCompare(a.date),
 };
@@ -66,6 +66,7 @@ function fillVideoList(ul, list, { withCheckbox }) {
     const li = document.createElement('li');
     li.dataset.id = v.id;
     if (v.id === current) li.className = 'playing';
+    if (v.rating === 1) li.classList.add('lvl1'); // à supprimer : en rouge
     if (v.offline) li.classList.add('missing'); // disque absent : visible mais non lisible
     if (withCheckbox) {
       const cb = document.createElement('input');
@@ -79,19 +80,7 @@ function fillVideoList(ul, list, { withCheckbox }) {
         count();
       };
       cb.title = 'Sélectionner (lecture, playlist, aléatoire)';
-      const dc = document.createElement('input');
-      dc.type = 'checkbox';
-      dc.className = 'delcb';
-      dc.title = 'Marquer à supprimer';
-      dc.checked = toDelete.has(v.id);
-      dc.onclick = (e) => {
-        e.stopPropagation();
-        if (dc.checked) toDelete.add(v.id);
-        else toDelete.delete(v.id);
-        saveToDelete();
-        count();
-      };
-      li.append(cb, dc);
+      li.append(cb);
     }
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -123,6 +112,7 @@ function refresh() {
   const onlyDups = $('onlyDups').checked;
   const hideOff = true; // vidéos indisponibles (disque débranché) : masquées de la liste, pas grisées
   const lg = $('langFilter').value;
+  const lvf = $('levelFilter').value;
   const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
     .filter((v) => {
@@ -134,6 +124,9 @@ function refresh() {
       if (lg === 'other' && (!v.lang || v.lang === 'fr' || v.lang === 'und')) return false;
       if (lg === 'und' && v.lang !== 'und') return false;
       if (lg === 'none' && v.lang) return false;
+      if (lvf === 'none' && v.rating) return false;
+      if (lvf === '45' && !(v.rating >= 4)) return false;
+      if (lvf && lvf !== 'none' && lvf !== '45' && v.rating !== +lvf) return false;
       if (dur) {
         const m = v.duration / 60;
         if (!v.duration) return false;
@@ -159,10 +152,12 @@ function count() {
   $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
   $('playSel').textContent = n ? `▶ Lire la sélection (${n})` : '▶ Lire la liste';
   $('playSel').title = n ? 'Lit les vidéos cochées' : 'Aucune vidéo cochée : lit la liste affichée';
-  const nDel = videos.filter((v) => toDelete.has(v.id)).length;
-  $('selDelete').textContent = nDel ? `Supprimer les ${nDel} marquée(s)` : 'Supprimer les marquées';
-  $('selDelete').title = nDel ? 'Met à la Corbeille les vidéos marquées de la case rouge (la liste est affichée avant confirmation)' : 'Aucune vidéo marquée : coche la case rouge à gauche d\'une vidéo';
-  $('delClear').hidden = !nDel;
+  const nDel = videos.filter((v) => v.rating === 1).length;
+  $('selDelete').textContent = nDel ? `Supprimer la liste (${nDel})` : 'Supprimer la liste';
+  $('selDelete').title = nDel ? 'Met à la Corbeille toutes les vidéos de niveau 1 (la liste est affichée avant confirmation)' : 'Aucune vidéo de niveau 1 : mets le curseur à 1 pendant la lecture';
+  $('selDelete').disabled = !nDel;
+  $('showDel').textContent = `🗑 À supprimer (${nDel})`;
+  $('showDel').classList.toggle('on', $('levelFilter').value === '1');
   $('dupClean').hidden =!$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
 }
 
@@ -196,7 +191,34 @@ function play(v, autoplay = true, startAt = 0) {
 // Cases du plein écran = état de la vidéo en cours.
 function syncCur() {
   $('vSel').checked = !!current && checked.has(current);
-  $('vDel').checked = !!current && toDelete.has(current);
+  const v = current ? byId(current) : null;
+  const sl = $('vLevel');
+  sl.disabled = !v;
+  sl.value = v ? v.rating || 3 : 3;
+  showLevelName(v ? v.rating : undefined);
+}
+
+// Nom du niveau à côté du curseur (undefined = pas de vidéo).
+function showLevelName(r) {
+  const n = $('vLevelName');
+  n.textContent = r === undefined ? '—' : levelLabel(r);
+  n.classList.toggle('lvl1', r === 1);
+  n.classList.toggle('lvl5', r === 5);
+}
+
+// Change le niveau d'une vidéo : enregistré tout de suite, ligne de la liste mise à jour sur place.
+function setLevel(id, lv) {
+  const v = byId(id);
+  if (!v) return;
+  v.rating = lv;
+  window.playou4.setRating({ [id]: lv });
+  const li = document.querySelector(`.vlist li[data-id="${id}"]`);
+  if (li) {
+    li.classList.toggle('lvl1', lv === 1);
+    const s = li.querySelector('.s');
+    if (s) s.textContent = subline(v);
+  }
+  count();
 }
 
 // Infos de la vidéo en cours (sous les boutons) ; la pastille à gauche copie le nom de l'auteur.
@@ -480,7 +502,6 @@ async function reload() {
   $('countPercent').value = settings.countPercent;
   const ids = new Set(videos.map((v) => v.id));
   checked = new Set([...checked].filter((id) => ids.has(id)));
-  toDelete = new Set([...toDelete].filter((id) => ids.has(id)));
   const au = $('author').value;
   const authors = [...new Set(videos.map((v) => v.creator))].sort((a, b) => a.localeCompare(b, 'fr'));
   $('author').textContent = '';
@@ -506,6 +527,7 @@ async function showFile(p) {
   $('q').value = '';
   $('author').value = '';
   $('onlyChecked').checked = false;
+  $('levelFilter').value = '';
   showTab('library');
   refresh();
   const li = [...$('list').children].find((el) => el.dataset.id === v.id);
@@ -534,14 +556,13 @@ async function deleteVideos(all, fromSelection = false) {
     video.load();
     current = null;
     setNow(null);
+    syncCur();
   }
   const r = await window.playou4.trash(list.map((v) => ({ id: v.id, path: v.path })));
   const gone = new Set(r.deleted);
   queue = queue.filter((v) => !gone.has(v.id));
   checked = new Set([...checked].filter((id) => !gone.has(id)));
   saveChecked();
-  toDelete = new Set([...toDelete].filter((id) => !gone.has(id)));
-  saveToDelete();
   if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
   await reload();
 }
@@ -714,7 +735,7 @@ async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
   $('q').addEventListener('input', refresh);
-  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
+  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'levelFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
 
   // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
@@ -893,10 +914,9 @@ async function init() {
     const v = byId(current);
     if (v) deleteVideos([v]);
   };
-  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => toDelete.has(v.id)), true);
-  $('delClear').onclick = () => {
-    toDelete.clear();
-    saveToDelete();
+  $('selDelete').onclick = () => deleteVideos(videos.filter((v) => v.rating === 1), true);
+  $('showDel').onclick = () => {
+    $('levelFilter').value = $('levelFilter').value === '1' ? '' : '1';
     refresh();
   };
   $('reveal').onclick = () => {
@@ -970,17 +990,22 @@ async function init() {
   $('vPlay').onclick = togglePlay;
   $('vPrev').onclick = () => step(-1);
   $('vNext').onclick = () => step(1);
-  const flip = (set, save, sel, id) => {
-    if (!id) return;
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    save();
-    const cb = document.querySelector(`.vlist li[data-id="${id}"] ${sel}`);
-    if (cb) cb.checked = set.has(id);
+  $('vSel').onclick = (e) => {
+    e.target.blur();
+    if (!current) return;
+    if (checked.has(current)) checked.delete(current);
+    else checked.add(current);
+    saveChecked();
+    const cb = document.querySelector(`.vlist li[data-id="${current}"] input`);
+    if (cb) cb.checked = checked.has(current);
     count();
   };
-  $('vSel').onclick = (e) => { e.target.blur(); flip(checked, saveChecked, 'input:not(.delcb)', current); };
-  $('vDel').onclick = (e) => { e.target.blur(); flip(toDelete, saveToDelete, 'input.delcb', current); };
+  // Curseur de niveau : le nom suit le glissement, l'enregistrement se fait au relâchement.
+  $('vLevel').addEventListener('input', () => showLevelName(+$('vLevel').value));
+  $('vLevel').addEventListener('change', () => {
+    if (current) setLevel(current, +$('vLevel').value);
+    $('vLevel').blur();
+  });
   video.addEventListener('click', togglePlay);
   $('vMute').onclick = () => (video.muted = !video.muted);
   $('vVol').addEventListener('input', () => {
@@ -1038,6 +1063,15 @@ async function init() {
   }
   window.playou4.onShowFile(showFile);
   await reload();
+  if (legacyDelete.length) {
+    const map = {};
+    for (const id of legacyDelete) if (byId(id) && !byId(id).rating) map[id] = 1;
+    if (Object.keys(map).length) {
+      await window.playou4.setRating(map);
+      await reload();
+    }
+    try { localStorage.removeItem('toDelete'); } catch {}
+  }
   await initLang();
   if (settings.smart.auto) runSmart(); // régénération au lancement
   // Retour sur la dernière vidéo lue, à la même position, en pause.

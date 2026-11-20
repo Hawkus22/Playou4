@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('playou4', {
   clearAuto: call('playlists:clearAuto'),
   deletePlaylist: call('playlists:delete'),
   addPlay: call('plays:add'),
+  setRating: call('rating:set'),
   move: call('playlist:move'),
   storeInfo: call('store:info'),
   storeReveal: call('store:reveal'),

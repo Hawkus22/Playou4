@@ -157,3 +157,14 @@ video { flex:1; min-height:0; width:100%; background:#000; }
 /* Boutons précédent / suivant et cases : visibles seulement en plein écran (sinon ils sont dans la barre du haut). */
 .fsonly { display:none; align-items:center; gap:8px; }
 #stage:fullscreen .fsonly { display:inline-flex; }
+
+/* Niveaux : curseur dans la barre de lecture ; niveau 1 (à supprimer) en rouge dans les listes. */
+#vLevelWrap { display:inline-flex; align-items:center; gap:6px; }
+#vLevel { width:84px; accent-color:var(--acc); }
+#vLevelName { font-size:12px; min-width:92px; color:var(--dim); white-space:nowrap; }
+#vLevelName.lvl1 { color:#ff6b6b; }
+#vLevelName.lvl5 { color:#ffd166; }
+.vlist li.lvl1 .t, .vlist li.lvl1 .s { color:#ff6b6b; }
+.vlist li.lvl1 { background:#3a1a1f; }
+.vlist li.lvl1:hover { background:#4a2128; }
+.s .lv { font-weight:600; }

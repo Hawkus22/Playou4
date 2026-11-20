@@ -47,6 +47,8 @@
         <option value="title">Titre A→Z</option>
         <option value="size-desc">Taille ↓ (plus grosses)</option>
         <option value="size-asc">Taille ↑ (plus petites)</option>
+        <option value="rating-desc">Niveau ↓ (Top d'abord)</option>
+        <option value="rating-asc">Niveau ↑ (à supprimer d'abord)</option>
         <option value="plays-desc">Plus lues</option>
         <option value="plays-asc">Moins lues / jamais lues</option>
       </select>
@@ -57,12 +59,22 @@
         <option value="und">Non détectée</option>
         <option value="none">Pas encore analysée</option>
       </select>
+      <select id="levelFilter" title="Filtrer par niveau">
+        <option value="">Tous niveaux</option>
+        <option value="none">Non classées</option>
+        <option value="1">1 · À supprimer</option>
+        <option value="2">2 · Bof</option>
+        <option value="3">3 · Moyen</option>
+        <option value="4">4 · Très sympa</option>
+        <option value="5">5 · Top</option>
+        <option value="45">4 et 5 (sympa + Top)</option>
+      </select>
       </div>
       <div class="row">
         <button id="selAll">Tout cocher</button>
         <button id="selNone">Tout décocher</button>
-        <button id="selDelete" class="danger">Supprimer les marquées</button>
-        <button id="delClear" hidden title="Retire toutes les marques rouges sans rien supprimer">Annuler les marques</button>
+        <button id="showDel" title="Affiche seulement la liste « À supprimer » (niveau 1)">🗑 À supprimer</button>
+        <button id="selDelete" class="danger">Supprimer la liste</button>
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
         <label title="Seulement les vidéos d'aujourd'hui"><input type="checkbox" id="onlyToday"> Vidéos du jour</label>
         <button id="listRefresh" title="Réapplique les filtres : avec « Cochées », les vidéos décochées sortent de la liste">↻ Rafraîchir la liste</button>
@@ -211,10 +223,13 @@
         <button id="vPrev" title="Vidéo précédente">⏮</button>
         <button id="vNext" title="Vidéo suivante">⏭</button>
         <label title="Sélectionner (lecture, playlist, aléatoire)"><input type="checkbox" id="vSel"></label>
-        <label title="Marquer à supprimer"><input type="checkbox" id="vDel" class="delcb"></label>
       </span>
       <span id="vTime">0:00 / 0:00</span>
       <input id="vSeek" type="range" min="0" max="1000" value="0" step="1" title="Position dans la vidéo" disabled>
+      <span id="vLevelWrap" title="Niveau de la vidéo : 1 à supprimer · 2 Bof · 3 Moyen · 4 Très sympa · 5 Top">
+        <input id="vLevel" type="range" min="1" max="5" step="1" value="3" disabled>
+        <span id="vLevelName">—</span>
+      </span>
       <button id="vMute" title="Couper / rétablir le son">🔊</button>
       <input id="vVol" type="range" min="0" max="100" value="100" title="Volume">
       <select id="vRate" title="Vitesse de lecture">
