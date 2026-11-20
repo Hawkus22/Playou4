@@ -121,7 +121,7 @@ function refresh() {
   const plIds = new Set(pl ? playlists[pl] || [] : []);
   const dur = $('durFilter').value;
   const onlyDups = $('onlyDups').checked;
-  const hideOff = $('hideOffline').checked;
+  const hideOff = true; // vidéos indisponibles (disque débranché) : masquées de la liste, pas grisées
   const lg = $('langFilter').value;
   const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
@@ -153,6 +153,7 @@ function refresh() {
 }
 
 function count() {
+  syncCur();
   const n = videos.filter((v) => checked.has(v.id)).length;
   const nd = videos.filter((v) => v.dups && v.dups.length).length;
   $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
@@ -188,7 +189,14 @@ function play(v, autoplay = true, startAt = 0) {
   if (autoplay) $('video').play();
   else $('video').pause();
   setNow(v);
+  syncCur();
   document.querySelectorAll('.vlist li').forEach((li) => li.classList.toggle('playing', li.dataset.id === current));
+}
+
+// Cases du plein écran = état de la vidéo en cours.
+function syncCur() {
+  $('vSel').checked = !!current && checked.has(current);
+  $('vDel').checked = !!current && toDelete.has(current);
 }
 
 // Infos de la vidéo en cours (sous les boutons) ; la pastille à gauche copie le nom de l'auteur.
@@ -706,7 +714,7 @@ async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
   $('q').addEventListener('input', refresh);
-  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'onlyDups', 'hideOffline'].forEach((id) => $(id).addEventListener('change', refresh));
+  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
 
   // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
@@ -960,6 +968,19 @@ async function init() {
     else video.pause();
   };
   $('vPlay').onclick = togglePlay;
+  $('vPrev').onclick = () => step(-1);
+  $('vNext').onclick = () => step(1);
+  const flip = (set, save, sel, id) => {
+    if (!id) return;
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    save();
+    const cb = document.querySelector(`.vlist li[data-id="${id}"] ${sel}`);
+    if (cb) cb.checked = set.has(id);
+    count();
+  };
+  $('vSel').onclick = (e) => { e.target.blur(); flip(checked, saveChecked, 'input:not(.delcb)', current); };
+  $('vDel').onclick = (e) => { e.target.blur(); flip(toDelete, saveToDelete, 'input.delcb', current); };
   video.addEventListener('click', togglePlay);
   $('vMute').onclick = () => (video.muted = !video.muted);
   $('vVol').addEventListener('input', () => {

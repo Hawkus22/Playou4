@@ -67,7 +67,6 @@
         <label title="Seulement les vidéos d'aujourd'hui"><input type="checkbox" id="onlyToday"> Vidéos du jour</label>
         <button id="listRefresh" title="Réapplique les filtres : avec « Cochées », les vidéos décochées sortent de la liste">↻ Rafraîchir la liste</button>
         <label><input type="checkbox" id="onlyDups"> Doublons</label>
-        <label><input type="checkbox" id="hideOffline"> Masquer hors ligne</label>
         <button id="dupClean" class="danger" hidden>Supprimer les doublons…</button>
       </div>
       <div class="plbox">
@@ -208,6 +207,12 @@
   <div id="stage">
     <div id="vctl">
       <button id="vPlay" title="Lecture / pause (Espace)">▶</button>
+      <span class="fsonly">
+        <button id="vPrev" title="Vidéo précédente">⏮</button>
+        <button id="vNext" title="Vidéo suivante">⏭</button>
+        <label title="Sélectionner (lecture, playlist, aléatoire)"><input type="checkbox" id="vSel"></label>
+        <label title="Marquer à supprimer"><input type="checkbox" id="vDel" class="delcb"></label>
+      </span>
       <span id="vTime">0:00 / 0:00</span>
       <input id="vSeek" type="range" min="0" max="1000" value="0" step="1" title="Position dans la vidéo" disabled>
       <button id="vMute" title="Couper / rétablir le son">🔊</button>

@@ -153,3 +153,7 @@ video { flex:1; min-height:0; width:100%; background:#000; }
 .choice .n { color:var(--dim); font-size:12px; }
 #dedupeResult { min-height:2.6em; }
 #dedupeResult b { color:var(--acc); }
+
+/* Boutons précédent / suivant et cases : visibles seulement en plein écran (sinon ils sont dans la barre du haut). */
+.fsonly { display:none; align-items:center; gap:8px; }
+#stage:fullscreen .fsonly { display:inline-flex; }
