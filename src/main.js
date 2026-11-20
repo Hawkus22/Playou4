@@ -55,8 +55,9 @@ function readStoreFile(file) {
   if (!s.folders.length) s.folders = [app.getPath('downloads')];
   // 0.6.0 : échelle de niveaux 1 à 5. Premier chargement : sauvegarde du fichier, compteurs de lecture remis à zéro,
   // toutes les vidéos « non classées » (pas d'entrée dans ratings).
-  if (!s.ratings || typeof s.ratings !== 'object') {
-    s.ratings = {};
+  if (!s.ratings || typeof s.ratings !== 'object') s.ratings = {};
+  if (!s.levelsInit) {
+    s.levelsInit = true;
     s.plays = {};
     try {
       const bak = file + '.bak-avant-0.6.0';
@@ -86,7 +87,8 @@ function loadStore() {
   try {
     store = readStoreFile(storePath);
   } catch {
-    store = emptyStore(); // premier lancement ou fichier illisible
+    store = emptyStore();
+    store.levelsInit = true; // magasin neuf : rien à remettre à zéro // premier lancement ou fichier illisible
     store.folders = [app.getPath('downloads')];
   }
 }

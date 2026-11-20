@@ -177,7 +177,7 @@ let lastSaveAt = 0;
 
 function play(v, autoplay = true, startAt = 0) {
   current = v.id;
-  counted = false;
+  counted = startAt > 0; // une reprise de lecture au-delà de 80 % ne compte pas comme une nouvelle lecture
   saveLast(v.id, startAt);
   $('video').src = v.url;
   if (startAt > 0) $('video').addEventListener('loadedmetadata', () => { $('video').currentTime = Math.min(startAt, Math.max(0, $('video').duration - 1)); }, { once: true });
