@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('playou4', {
   move: call('playlist:move'),
   storeInfo: call('store:info'),
   storeReveal: call('store:reveal'),
+  logReveal: call('log:reveal'),
   storeOpen: call('store:open'),
   storeSaveAs: call('store:saveAs'),
   setSettings: call('settings:set'),

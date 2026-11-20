@@ -158,7 +158,7 @@ function you4Meta() {
   if (!fs.existsSync(YOU4_DB)) return map;
   try {
     const db = new DatabaseSync(YOU4_DB, { readOnly: true });
-    for (const r of db.prepare(`SELECT creator, file_path, finished_at FROM downloads WHERE status='OK' AND file_path IS NOT NULL`).all()) {
+    for (const r of db.prepare(`SELECT creator, file_path, finished_at, url FROM downloads WHERE status='OK' AND file_path IS NOT NULL`).all()) {
       map.set(r.file_path.toLowerCase(), r);
     }
     db.close();
@@ -166,6 +166,28 @@ function you4Meta() {
     /* base verrouillée ou absente : on continue sans */
   }
   return map;
+}
+
+// Journal des suppressions (doublons au lancement, suppressions manuelles) : une ligne par fichier mis à la Corbeille,
+// avec l'URL de téléchargement quand le fichier vient de You4 (retrouvée par chemin dans you4.db, lecture seule).
+const logPath = () => path.join(app.getPath('userData'), 'suppressions.log');
+function logTrash(kind, entries) {
+  if (!entries.length) return;
+  const y4 = you4Meta();
+  const now = new Date().toISOString();
+  const lines = entries.map((e) => {
+    const row = y4.get(e.path.toLowerCase()) || (e.keep && y4.get(e.keep.toLowerCase())) || null; // à défaut, l'URL de la copie conservée
+    const parts = [`${now} [${kind}]`, e.path, e.size != null ? `${(e.size / 1048576).toFixed(1)} Mo` : ''];
+    if (e.keep) parts.push(`copie gardée : ${e.keep}`);
+    if (e.info) parts.push(e.info);
+    parts.push(row && row.url ? `URL You4 : ${row.url}` : 'URL : inconnue (pas téléchargé par You4)');
+    return parts.filter(Boolean).join(' | ');
+  });
+  try {
+    fs.appendFileSync(logPath(), lines.join('\n') + '\n');
+  } catch {
+    /* journal non inscriptible : la suppression a déjà eu lieu, on ne bloque rien */
+  }
 }
 
 // Durée lue une fois par fichier, puis conservée avec l'empreinte (mêmes taille et date = même durée).
@@ -500,17 +522,25 @@ ipcMain.handle('library:trash', async (_e, items) => {
   const roots = store.folders.map((f) => path.resolve(f).toLowerCase() + path.sep);
   const deleted = [];
   const failed = [];
+  const logged = [];
   for (const it of Array.isArray(items) ? items : []) {
     const p = it && typeof it.path === 'string' ? path.resolve(it.path) : '';
     const name = path.basename(p);
     try {
       if (!/\.mp4$/i.test(p) || !roots.some((r) => p.toLowerCase().startsWith(r))) throw new Error('hors de la bibliothèque');
-      if (fs.existsSync(p)) await shell.trashItem(p); // déjà absent : on nettoie quand même les données
+      const c = store.catalog[it.id] || {};
+      const entry = { path: p, size: null, info: [c.creator, c.title, store.ratings[it.id] ? `niveau ${store.ratings[it.id]}` : ''].filter(Boolean).join(' — ') };
+      if (fs.existsSync(p)) {
+        entry.size = fs.statSync(p).size;
+        await shell.trashItem(p); // déjà absent : on nettoie quand même les données
+        logged.push(entry);
+      }
       deleted.push(it.id);
     } catch (e) {
       failed.push(name + ' : ' + e.message);
     }
   }
+  logTrash('SUPPRESSION', logged);
   const gone = new Set(deleted);
   for (const id of gone) {
     delete store.plays[id];
@@ -559,17 +589,25 @@ ipcMain.handle('library:trashCopies', async (_e, paths) => {
   const roots = store.folders.map((f) => path.resolve(f).toLowerCase() + path.sep);
   let deleted = 0;
   const failed = [];
+  const logged = [];
+  // Chaque élément : un chemin, ou { path, keep } avec keep = la copie conservée (pour le journal).
   for (const raw of Array.isArray(paths) ? paths : []) {
-    const p = typeof raw === 'string' ? path.resolve(raw) : '';
+    const item = typeof raw === 'string' ? { path: raw } : raw || {};
+    const p = typeof item.path === 'string' ? path.resolve(item.path) : '';
     try {
       if (!/\.mp4$/i.test(p) || !roots.some((r) => p.toLowerCase().startsWith(r))) throw new Error('hors de la bibliothèque');
-      if (fs.existsSync(p)) await shell.trashItem(p);
+      if (fs.existsSync(p)) {
+        const size = fs.statSync(p).size;
+        await shell.trashItem(p);
+        logged.push({ path: p, size, keep: typeof item.keep === 'string' ? item.keep : '' });
+      }
       delete store.fpCache[p];
       deleted++;
     } catch (e) {
       failed.push(path.basename(p) + ' : ' + e.message);
     }
   }
+  logTrash('DOUBLON', logged);
   saveStore();
   return { deleted, failed };
 });
@@ -681,6 +719,10 @@ ipcMain.handle('playlist:move', async (_e, paths) => {
 
 // ---- Fichier de données (playlists, compteurs, dossiers) --------------------
 
+ipcMain.handle('log:reveal', () => {
+  if (fs.existsSync(logPath())) shell.showItemInFolder(logPath());
+  else dialog.showMessageBox({ message: "Le journal n'existe pas encore : aucune suppression n'a été faite depuis la version 0.6.3." });
+});
 ipcMain.handle('store:info', () => storePath);
 ipcMain.handle('store:reveal', () => shell.showItemInFolder(storePath));
 

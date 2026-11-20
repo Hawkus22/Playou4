@@ -712,7 +712,7 @@ async function initLang() {
 // Au lancement : un même contenu en plusieurs exemplaires est gardé une seule fois. La copie conservée est celle du
 // premier dossier de la liste des sources ; les autres vont à la Corbeille (le main refuse tout fichier hors bibliothèque).
 async function cleanDuplicates() {
-  const paths = videos.filter((v) => !v.offline).flatMap((v) => v.dups || []);
+  const paths = videos.filter((v) => !v.offline).flatMap((v) => (v.dups || []).map((d) => ({ path: d, keep: v.path })));
   if (!paths.length) return;
   const r = await window.playou4.trashCopies(paths);
   if (r.failed.length) alert(['Doublon non supprimé :', ...r.failed].join(String.fromCharCode(10)));
@@ -853,6 +853,7 @@ async function init() {
   $('updateInstall').onclick = $('updateBanner').onclick = () => window.playou4.installUpdate();
   refreshStoreInfo();
   $('storeReveal').onclick = () => window.playou4.storeReveal();
+  $('logReveal').onclick = () => window.playou4.logReveal();
   $('storeOpen').onclick = async () => {
     const r = await window.playou4.storeOpen();
     if (r.canceled) return;
