@@ -160,10 +160,15 @@ video { flex:1; min-height:0; width:100%; background:#000; }
 
 /* Niveaux : curseur dans la barre de lecture ; niveau 1 (à supprimer) en rouge dans les listes. */
 #vLevelWrap { display:inline-flex; align-items:center; gap:6px; }
-#vLevel { width:84px; accent-color:var(--acc); }
-#vLevelName { font-size:12px; min-width:92px; color:var(--dim); white-space:nowrap; }
-#vLevelName.lvl1 { color:#ff6b6b; }
-#vLevelName.lvl5 { color:#ffd166; }
+#vLevel { position:relative; width:130px; height:26px; flex:none; cursor:pointer; touch-action:none; }
+#vLevel.off { opacity:.35; pointer-events:none; }
+#vLevel:focus-visible { outline:2px solid var(--acc); outline-offset:2px; border-radius:3px; }
+#vLevel .rule { position:absolute; left:0; right:0; top:50%; height:3px; transform:translateY(-50%); border-radius:2px; background:var(--grad); opacity:.55; }
+#vLevel .tick { position:absolute; top:50%; width:2px; height:14px; transform:translate(-50%,-50%); border-radius:1px; background:var(--c); opacity:.7; }
+#vLevel .tick.on { height:20px; opacity:1; }
+#vLevel .thumb { position:absolute; top:50%; width:12px; height:22px; transform:translate(-50%,-50%); border-radius:3px; background:var(--acc); box-shadow:0 0 0 2px var(--panel); transition:left .1s; }
+#vLevel .thumb.unrated { background:#6b7184; opacity:.7; }
+#vLevelName { font-size:12px; min-width:104px; color:var(--dim); white-space:nowrap; }
 .vlist li.lvl1 .t, .vlist li.lvl1 .s { color:#ff6b6b; }
 .vlist li.lvl1 { background:#3a1a1f; }
 .vlist li.lvl1:hover { background:#4a2128; }

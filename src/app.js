@@ -192,18 +192,42 @@ function play(v, autoplay = true, startAt = 0) {
 function syncCur() {
   $('vSel').checked = !!current && checked.has(current);
   const v = current ? byId(current) : null;
-  const sl = $('vLevel');
-  sl.disabled = !v;
-  sl.value = v ? v.rating || 3 : 3;
-  showLevelName(v ? v.rating : undefined);
+  drawLevel(v ? v.rating : undefined);
 }
 
-// Nom du niveau à côté du curseur (undefined = pas de vidéo).
-function showLevelName(r) {
+// Dégradé des niveaux : rouge (1) → vert (5).
+const LEVEL_COLORS = { 1: '#ff5b5b', 2: '#ff9f45', 3: '#ffd23f', 4: '#a8d84e', 5: '#3ddc84' };
+
+// Barre de niveaux : une ligne, un trait par niveau, un curseur. r : 1 à 5, null = non classée, undefined = pas de vidéo.
+function drawLevel(r) {
+  const el = $('vLevel');
+  if (!el.firstChild) {
+    el.style.setProperty('--grad', `linear-gradient(90deg, ${[1, 2, 3, 4, 5].map((n) => LEVEL_COLORS[n]).join(', ')})`);
+    el.innerHTML = '<div class="rule"></div>';
+    for (let n = 1; n <= 5; n++) {
+      const t = document.createElement('div');
+      t.className = 'tick';
+      t.dataset.n = n;
+      t.style.left = `calc(6px + (100% - 12px) * ${(n - 1) / 4})`;
+      t.style.setProperty('--c', LEVEL_COLORS[n]);
+      el.append(t);
+    }
+    const th = document.createElement('div');
+    th.className = 'thumb';
+    el.append(th);
+  }
+  const shown = r || 3;
+  el.classList.toggle('off', r === undefined);
+  el.querySelectorAll('.tick').forEach((t) => t.classList.toggle('on', !!r && +t.dataset.n === r));
+  const th = el.querySelector('.thumb');
+  th.style.left = `calc(6px + (100% - 12px) * ${(shown - 1) / 4})`;
+  th.style.background = r ? LEVEL_COLORS[r] : '';
+  th.classList.toggle('unrated', !r);
+  el.setAttribute('aria-valuenow', shown);
+  el.setAttribute('aria-valuetext', levelLabel(r || null));
   const n = $('vLevelName');
   n.textContent = r === undefined ? '—' : levelLabel(r);
-  n.classList.toggle('lvl1', r === 1);
-  n.classList.toggle('lvl5', r === 5);
+  n.style.color = r ? LEVEL_COLORS[r] : '';
 }
 
 // Change le niveau d'une vidéo : enregistré tout de suite, ligne de la liste mise à jour sur place.
@@ -1000,11 +1024,35 @@ async function init() {
     if (cb) cb.checked = checked.has(current);
     count();
   };
-  // Curseur de niveau : le nom suit le glissement, l'enregistrement se fait au relâchement.
-  $('vLevel').addEventListener('input', () => showLevelName(+$('vLevel').value));
-  $('vLevel').addEventListener('change', () => {
-    if (current) setLevel(current, +$('vLevel').value);
-    $('vLevel').blur();
+  // Barre de niveaux : clic ou glissement (enregistré au relâchement), flèches du clavier (enregistrées tout de suite).
+  const lvl = $('vLevel');
+  const levelAt = (x) => {
+    const r = lvl.getBoundingClientRect();
+    return Math.round(Math.min(1, Math.max(0, (x - r.left - 6) / (r.width - 12))) * 4) + 1;
+  };
+  let lvDrag = null;
+  lvl.addEventListener('pointerdown', (e) => {
+    if (!current) return;
+    lvDrag = levelAt(e.clientX);
+    lvl.setPointerCapture(e.pointerId);
+    drawLevel(lvDrag);
+  });
+  lvl.addEventListener('pointermove', (e) => {
+    if (lvDrag === null) return;
+    const n = levelAt(e.clientX);
+    if (n !== lvDrag) { lvDrag = n; drawLevel(n); }
+  });
+  lvl.addEventListener('pointerup', () => {
+    if (lvDrag !== null && current) setLevel(current, lvDrag);
+    lvDrag = null;
+  });
+  lvl.addEventListener('keydown', (e) => {
+    const k = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+    const v = current ? byId(current) : null;
+    if (!v || (!k && e.key !== 'Home' && e.key !== 'End')) return;
+    e.preventDefault();
+    e.stopPropagation(); // les flèches ne doivent pas aussi avancer la vidéo
+    setLevel(current, e.key === 'Home' ? 1 : e.key === 'End' ? 5 : Math.min(5, Math.max(1, (v.rating || 3) + k)));
   });
   video.addEventListener('click', togglePlay);
   $('vMute').onclick = () => (video.muted = !video.muted);
