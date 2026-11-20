@@ -4,6 +4,7 @@ const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(2) + ' Go' : 
 const fmtDur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`);
 // Niveaux : 1 à supprimer · 2 Bof · 3 Moyen · 4 Très sympa · 5 Top. rating = null : non classée (affichée au niveau 3).
 const LEVELS = { 1: 'À supprimer', 2: 'Bof', 3: 'Moyen', 4: 'Très sympa', 5: 'Top' };
+const LEVEL_CHOICES = { 5: '5 · Top', 4: '4 · Très sympa', 3: '3 · Moyen', 2: '2 · Bof', 1: '1 · À supprimer', 45: '4 et 5 (sympa + Top)', none: 'Non classées' };
 const levelLabel = (r) => (r ? `${r} · ${LEVELS[r]}` : 'Non classée');
 const subline = (v) => `${v.creator} · ${fmtDate(v.date)} · ${v.duration ? fmtDur(v.duration) + ' · ' : ''}${v.lang && v.lang !== 'und' ? v.lang.toUpperCase() + ' · ' : ''}${fmtSize(v.size)}${v.dups && v.dups.length ? ' · ⧉ ×' + (v.dups.length + 1) : ''}${v.offline ? ' · hors ligne' + (v.support ? ' (' + v.support + ')' : '') : ''} · ${levelLabel(v.rating)} · ▶ ${v.plays}`;
 
@@ -106,13 +107,14 @@ function fillVideoList(ul, list, { withCheckbox }) {
 function refresh() {
   const q = $('q').value.trim().toLowerCase();
   const au = $('author').value;
-  const pl = $('plFilter').value;
+  const sel = $('plFilter').value;
+  const lvf = sel.startsWith('@lvl:') ? sel.slice(5) : ''; // niveau choisi dans le même menu que les playlists
+  const pl = lvf ? '' : sel;
   const plIds = new Set(pl ? playlists[pl] || [] : []);
   const dur = $('durFilter').value;
   const onlyDups = $('onlyDups').checked;
   const hideOff = true; // vidéos indisponibles (disque débranché) : masquées de la liste, pas grisées
   const lg = $('langFilter').value;
-  const lvf = $('levelFilter').value;
   const sm = settings.smart || { shortMax: 5, longMin: 20 };
   view = videos
     .filter((v) => {
@@ -157,7 +159,13 @@ function count() {
   $('selDelete').title = nDel ? 'Met à la Corbeille toutes les vidéos de niveau 1 (la liste est affichée avant confirmation)' : 'Aucune vidéo de niveau 1 : mets le curseur à 1 pendant la lecture';
   $('selDelete').disabled = !nDel;
   $('showDel').textContent = `🗑 À supprimer (${nDel})`;
-  $('showDel').classList.toggle('on', $('levelFilter').value === '1');
+  $('showDel').classList.toggle('on', $('plFilter').value === '@lvl:1');
+  for (const o of $('plFilter').options) {
+    if (!o.value.startsWith('@lvl:')) continue;
+    const k = o.value.slice(5);
+    const n = videos.filter((v) => (k === 'none' ? !v.rating : k === '45' ? v.rating >= 4 : v.rating === +k)).length;
+    o.textContent = `${LEVEL_CHOICES[k]} (${n})`;
+  }
   $('dupClean').hidden =!$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
 }
 
@@ -343,8 +351,17 @@ function renderPlaylists() {
   const prevFilter = filter.value;
   filter.textContent = '';
   filter.append(new Option('Toutes les vidéos', ''));
-  for (const name of names) filter.append(new Option(`${name} (${plVideos(name).length})`, name));
-  filter.value = names.includes(prevFilter) ? prevFilter : '';
+  const gl = document.createElement('optgroup');
+  gl.label = 'Niveaux';
+  for (const k of Object.keys(LEVEL_CHOICES)) gl.append(new Option(LEVEL_CHOICES[k], '@lvl:' + k));
+  filter.append(gl);
+  if (names.length) {
+    const gp = document.createElement('optgroup');
+    gp.label = 'Playlists';
+    for (const name of names) gp.append(new Option(`${name} (${plVideos(name).length})`, name));
+    filter.append(gp);
+  }
+  filter.value = names.includes(prevFilter) || prevFilter.startsWith('@lvl:') ? prevFilter : '';
   if (filter.value !== prevFilter) refresh(); // la playlist filtrée n'existe plus
   $('plEmpty').hidden = names.length > 0;
   $('plDetail').hidden = !activePl;
@@ -551,7 +568,7 @@ async function showFile(p) {
   $('q').value = '';
   $('author').value = '';
   $('onlyChecked').checked = false;
-  $('levelFilter').value = '';
+  if ($('plFilter').value.startsWith('@lvl:')) $('plFilter').value = '';
   showTab('library');
   refresh();
   const li = [...$('list').children].find((el) => el.dataset.id === v.id);
@@ -759,7 +776,7 @@ async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
   $('q').addEventListener('input', refresh);
-  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'levelFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
+  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
 
   // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
@@ -940,7 +957,7 @@ async function init() {
   };
   $('selDelete').onclick = () => deleteVideos(videos.filter((v) => v.rating === 1), true);
   $('showDel').onclick = () => {
-    $('levelFilter').value = $('levelFilter').value === '1' ? '' : '1';
+    $('plFilter').value = $('plFilter').value === '@lvl:1' ? '' : '@lvl:1';
     refresh();
   };
   $('reveal').onclick = () => {
