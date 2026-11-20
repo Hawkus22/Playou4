@@ -30,6 +30,16 @@
         <button id="srcRefresh" class="small" title="Revérifier les disques">↻ Actualiser</button>
       </details>
       <select id="plFilter" title="Afficher seulement les vidéos d'une playlist"></select>
+      <select id="levelFilter" title="Filtrer par niveau">
+        <option value="">Tous niveaux</option>
+        <option value="none">Non classées</option>
+        <option value="1">1 · À supprimer</option>
+        <option value="2">2 · Bof</option>
+        <option value="3">3 · Moyen</option>
+        <option value="4">4 · Très sympa</option>
+        <option value="5">5 · Top</option>
+        <option value="45">4 et 5 (sympa + Top)</option>
+      </select>
       <div class="row two">
         <select id="author"></select>
         <select id="durFilter" title="Filtrer par durée">
@@ -59,16 +69,6 @@
         <option value="und">Non détectée</option>
         <option value="none">Pas encore analysée</option>
       </select>
-      <select id="levelFilter" title="Filtrer par niveau">
-        <option value="">Tous niveaux</option>
-        <option value="none">Non classées</option>
-        <option value="1">1 · À supprimer</option>
-        <option value="2">2 · Bof</option>
-        <option value="3">3 · Moyen</option>
-        <option value="4">4 · Très sympa</option>
-        <option value="5">5 · Top</option>
-        <option value="45">4 et 5 (sympa + Top)</option>
-      </select>
       </div>
       <div class="row">
         <button id="selAll">Tout cocher</button>
@@ -78,8 +78,6 @@
         <label><input type="checkbox" id="onlyChecked"> Cochées</label>
         <label title="Seulement les vidéos d'aujourd'hui"><input type="checkbox" id="onlyToday"> Vidéos du jour</label>
         <button id="listRefresh" title="Réapplique les filtres : avec « Cochées », les vidéos décochées sortent de la liste">↻ Rafraîchir la liste</button>
-        <label><input type="checkbox" id="onlyDups"> Doublons</label>
-        <button id="dupClean" class="danger" hidden>Supprimer les doublons…</button>
       </div>
       <div class="plbox">
         <div class="row pl">
@@ -245,15 +243,6 @@
     <video id="video"></video>
   </div>
 </main>
-<div id="dedupe" class="modal" hidden>
-  <div class="modal-box">
-    <h2>Supprimer les doublons</h2>
-    <p id="dedupeIntro" class="dim"></p>
-    <div id="dedupeChoices"></div>
-    <p id="dedupeResult"></p>
-    <div class="row end"><button id="dedupeCancel">Annuler</button><button id="dedupeGo" class="danger">Mettre à la Corbeille</button></div>
-  </div>
-</div>
 <div id="progress" hidden>
   <div id="progLabel"></div>
   <div class="track"><div id="progFill"></div></div>

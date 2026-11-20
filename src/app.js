@@ -14,6 +14,7 @@ let queue = []; // ordre de lecture en cours
 // 'selection' = vidéos cochées (figées au moment du clic sur Lire), 'playlist' = playlist ouverte.
 let queueSource = 'library';
 let current = null; // id en lecture
+let launchNote = ''; // résultat du nettoyage des doublons au lancement, affiché dans le compteur
 let counted = false; // lecture courante déjà comptée
 let checked = new Set();
 let playlists = {};
@@ -109,7 +110,6 @@ function refresh() {
   const pl = $('plFilter').value;
   const plIds = new Set(pl ? playlists[pl] || [] : []);
   const dur = $('durFilter').value;
-  const onlyDups = $('onlyDups').checked;
   const hideOff = true; // vidéos indisponibles (disque débranché) : masquées de la liste, pas grisées
   const lg = $('langFilter').value;
   const lvf = $('levelFilter').value;
@@ -118,7 +118,6 @@ function refresh() {
     .filter((v) => {
       if (au && v.creator !== au) return false;
       if (pl && !plIds.has(v.id)) return false;
-      if (onlyDups && !(v.dups && v.dups.length)) return false;
       if (hideOff && v.offline) return false;
       if (lg === 'fr' && v.lang !== 'fr') return false;
       if (lg === 'other' && (!v.lang || v.lang === 'fr' || v.lang === 'und')) return false;
@@ -149,7 +148,7 @@ function count() {
   syncCur();
   const n = videos.filter((v) => checked.has(v.id)).length;
   const nd = videos.filter((v) => v.dups && v.dups.length).length;
-  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
+  $('count').textContent = `${view.length} vidéo(s) affichée(s) sur ${videos.length} · ${n} cochée(s)` + (nd ? ` · ${nd} en doublon` : '') + (launchNote ? ` · ${launchNote}` : '') + (videos.some((v) => v.offline) ? ` · ${videos.filter((v) => v.offline).length} hors ligne` : '');
   $('playSel').textContent = n ? `▶ Lire la sélection (${n})` : '▶ Lire la liste';
   $('playSel').title = n ? 'Lit les vidéos cochées' : 'Aucune vidéo cochée : lit la liste affichée';
   const nDel = videos.filter((v) => v.rating === 1).length;
@@ -158,7 +157,13 @@ function count() {
   $('selDelete').disabled = !nDel;
   $('showDel').textContent = `🗑 À supprimer (${nDel})`;
   $('showDel').classList.toggle('on', $('levelFilter').value === '1');
-  $('dupClean').hidden =!$('onlyDups').checked || !view.some((v) => v.dups && v.dups.length);
+  for (const o of $('levelFilter').options) {
+    const k = o.value;
+    if (!k) continue;
+    o.dataset.base = o.dataset.base || o.textContent;
+    const n = videos.filter((v) => (k === 'none' ? !v.rating : k === '45' ? v.rating >= 4 : v.rating === +k)).length;
+    o.textContent = `${o.dataset.base} (${n})`;
+  }
 }
 
 function say(msg) {
@@ -609,57 +614,6 @@ function folderOf(p) {
   return f ? { key: f.path, label: f.path } : { key: '?', label: 'Autre' };
 }
 
-function openDedupe() {
-  // Groupes de doublons de la liste affichée : copies = la copie principale puis les autres
-  const groups = view.filter((v) => v.dups && v.dups.length).map((v) => ({ copies: [v.path, ...v.dups], size: v.size, title: v.title }));
-  if (!groups.length) return;
-  const { keyOf, level } = Dedupe.pickKeyOf(groups, supportOf, folderOf);
-  const sums = Dedupe.summarize(groups, keyOf);
-  let keep = sums[0].key; // par défaut : l'endroit qui contient le plus de ces fichiers
-  $('dedupeIntro').textContent = `${groups.length} fichier(s) existent en plusieurs exemplaires. Choisis le ${level} sur lequel tu GARDES les fichiers : les copies des autres ${level === 'disque' ? 'disques' : 'dossiers'} iront à la Corbeille Windows (récupérables).`;
-  const box = $('dedupeChoices');
-  const refresh = () => {
-    const p = Dedupe.plan(groups, keyOf, keep);
-    box.querySelectorAll('.choice').forEach((el) => el.classList.toggle('on', el.dataset.key === keep));
-    const others = sums.filter((x) => x.key !== keep).map((x) => x.label).join(', ');
-    $('dedupeResult').innerHTML = `Garder sur <b>${sums.find((x) => x.key === keep).label}</b>` + (others ? ` · supprimer sur <b>${others}</b>` : '') +
-      `<br>${p.paths.length} copie(s) à la Corbeille (${fmtSize(p.bytes)} libérés)` + (p.fallback ? ` · ${p.fallback} fichier(s) n'ont aucune copie sur ce ${level} : leur première copie est conservée` : '');
-    $('dedupeGo').disabled = !p.paths.length;
-    $('dedupeGo').textContent = `Mettre ${p.paths.length} copie(s) à la Corbeille`;
-  };
-  box.replaceChildren(
-    ...sums.map((x) => {
-      const row = document.createElement('label');
-      row.className = 'choice';
-      row.dataset.key = x.key;
-      const r = document.createElement('input');
-      r.type = 'radio';
-      r.name = 'dedupeKeep';
-      r.checked = x.key === keep;
-      r.onchange = () => {
-        keep = x.key;
-        refresh();
-      };
-      const t = document.createElement('div');
-      t.innerHTML = `<b></b><div class="n">${x.files} fichier(s) concerné(s) · ${fmtSize(x.bytes)}</div>`;
-      t.querySelector('b').textContent = x.label;
-      row.append(r, t);
-      return row;
-    })
-  );
-  refresh();
-  $('dedupe').hidden = false;
-  $('dedupeCancel').onclick = () => ($('dedupe').hidden = true);
-  $('dedupeGo').onclick = async () => {
-    const p = Dedupe.plan(groups, keyOf, keep);
-    $('dedupeGo').disabled = true;
-    const r = await window.playou4.trashCopies(p.paths);
-    $('dedupe').hidden = true;
-    if (r.failed.length) alert('Non supprimé :\n' + r.failed.join('\n'));
-    await reload();
-  };
-}
-
 // ---- Playlists intelligentes ---------------------------------------------------------------
 
 const SM_FLAGS = { byAuthor: 'smAuthor', byKeyword: 'smKeyword', byDuration: 'smDuration', byLanguage: 'smLang', folderAuthors: 'smFolders', auto: 'smAuto' };
@@ -755,11 +709,22 @@ async function initLang() {
   if (settings.langAuto && !langRunning && (await window.playou4.langStatus()).installed) startLang(videos);
 }
 
+// Au lancement : un même contenu en plusieurs exemplaires est gardé une seule fois. La copie conservée est celle du
+// premier dossier de la liste des sources ; les autres vont à la Corbeille (le main refuse tout fichier hors bibliothèque).
+async function cleanDuplicates() {
+  const paths = videos.filter((v) => !v.offline).flatMap((v) => v.dups || []);
+  if (!paths.length) return;
+  const r = await window.playou4.trashCopies(paths);
+  if (r.failed.length) alert(['Doublon non supprimé :', ...r.failed].join(String.fromCharCode(10)));
+  if (r.deleted) launchNote = `${r.deleted} doublon(s) mis à la Corbeille au lancement`;
+  await reload();
+}
+
 async function init() {
   document.querySelectorAll('.tabs button').forEach((b) => (b.onclick = () => showTab(b.dataset.tab)));
 
   $('q').addEventListener('input', refresh);
-  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'levelFilter', 'onlyDups'].forEach((id) => $(id).addEventListener('change', refresh));
+  ['author', 'sort', 'onlyChecked', 'onlyToday', 'plFilter', 'durFilter', 'langFilter', 'levelFilter'].forEach((id) => $(id).addEventListener('change', refresh));
   $('listRefresh').onclick = refresh;
 
   // ---- Menu de sélection (filtres, tri, playlists) : masqué, il s'affiche au survol ; 📌 le garde ouvert ----
@@ -920,7 +885,6 @@ async function init() {
   };
   $('next').onclick = () => step(1);
   $('prev').onclick = () => step(-1);
-  $('dupClean').onclick = () => openDedupe();
   $('srcRefresh').onclick = reload;
   // Au retour dans la fenêtre : si un disque a été (re)branché ou débranché, la bibliothèque se met à jour.
   window.addEventListener('focus', async () => {
@@ -1120,6 +1084,7 @@ async function init() {
     }
     try { localStorage.removeItem('toDelete'); } catch {}
   }
+  await cleanDuplicates();
   await initLang();
   if (settings.smart.auto) runSmart(); // régénération au lancement
   // Retour sur la dernière vidéo lue, à la même position, en pause.
