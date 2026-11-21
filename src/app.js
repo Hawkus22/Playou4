@@ -275,28 +275,70 @@ function setLevel(id, lv) {
 // Infos de la vidéo en cours (sous les boutons) ; la pastille à gauche copie le nom de l'auteur.
 function setNow(v) {
   $('now').textContent = v ? `${v.creator} — ${v.title}` : 'Aucune vidéo';
-  $('now').title = v ? `${v.creator} — ${v.title}` : '';
+  $('now').title = v ? `${v.creator} — ${v.title}\nClic : retrouver la vidéo dans la liste (Maj+clic : en levant les filtres)` : '';
+  $('now').classList.toggle('empty', !v);
   $('copyAuthor').hidden = !v || !v.creator;
   $('copyAuthor').classList.remove('done');
+  $('copyTitle').hidden = !v;
+  $('copyTitle').classList.remove('done');
 }
 
-async function copyAuthor() {
-  const v = byId(current);
-  if (!v || !v.creator) return;
+// Copie un texte (secours si le presse-papiers est refusé) et affiche « ✓ » un instant sur le bouton.
+async function copyText(text, btn) {
   try {
-    await navigator.clipboard.writeText(v.creator);
+    await navigator.clipboard.writeText(text);
   } catch {
-    const t = document.createElement('textarea'); // secours si le presse-papiers est refusé
-    t.value = v.creator;
+    const t = document.createElement('textarea');
+    t.value = text;
     document.body.append(t);
     t.select();
     document.execCommand('copy');
     t.remove();
   }
-  const b = $('copyAuthor');
-  b.classList.add('done');
-  b.textContent = '✓';
-  setTimeout(() => { b.classList.remove('done'); b.textContent = '⧉'; }, 1200);
+  btn.classList.add('done');
+  btn.textContent = '✓';
+  setTimeout(() => { btn.classList.remove('done'); btn.textContent = '⧉'; }, 1200);
+}
+
+async function copyAuthor() {
+  const v = byId(current);
+  if (v && v.creator) await copyText(v.creator, $('copyAuthor'));
+}
+
+// Copie le titre seul (sans le nom de l'auteur), pour une recherche sans passer par Ctrl+C.
+async function copyTitle() {
+  const v = byId(current);
+  if (v) await copyText(v.title, $('copyTitle'));
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let t = $('toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'toast';
+    document.body.append(t);
+  }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 4500);
+}
+
+// Clic sur le titre : la vidéo en cours est recentrée dans la liste (avec une surbrillance). Si un filtre la masque
+// (par exemple « non classées » après l'avoir classée), un message le dit ; Maj+clic lève les filtres pour la retrouver.
+async function locateCurrent(e) {
+  const v = byId(current);
+  if (!v) return;
+  if (e && e.shiftKey) return showFile(v.path);
+  const li = [...$('list').children].find((el) => el.dataset.id === current);
+  if (!li) return toast("Cette vidéo n'est plus dans la liste affichée (un filtre la masque). Maj+clic sur le titre : la retrouver en levant les filtres.");
+  showTab('library');
+  li.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  li.classList.remove('flash');
+  void li.offsetWidth; // relance l'animation si elle est déjà en cours
+  li.classList.add('flash');
+  setTimeout(() => li.classList.remove('flash'), 2500);
 }
 
 // Lecture fléchée : 0 = normale, -1 = vers le haut, 1 = vers le bas, dans la liste affichée (filtres compris).
@@ -809,6 +851,8 @@ async function init() {
   };
   applyPin();
   $('copyAuthor').onclick = copyAuthor;
+  $('copyTitle').onclick = copyTitle;
+  $('now').addEventListener('click', locateCurrent);
   $('selAll').onclick = () => {
     view.forEach((v) => checked.add(v.id));
     saveChecked();
