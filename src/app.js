@@ -123,9 +123,7 @@ function refresh() {
       if (lg === 'other' && (!v.lang || v.lang === 'fr' || v.lang === 'und')) return false;
       if (lg === 'und' && v.lang !== 'und') return false;
       if (lg === 'none' && v.lang) return false;
-      if (lvf === 'none' && v.rating) return false;
-      if (lvf === '45' && !(v.rating >= 4)) return false;
-      if (lvf && lvf !== 'none' && lvf !== '45' && v.rating !== +lvf) return false;
+      if (!levelMatch(v, lvf)) return false;
       if (dur) {
         const m = v.duration / 60;
         if (!v.duration) return false;
@@ -236,6 +234,14 @@ function drawLevel(r) {
 }
 
 // Change le niveau d'une vidéo : enregistré tout de suite, ligne de la liste mise à jour sur place.
+// La vidéo correspond-elle au filtre de niveau ? k : '' (tous), 'none' (non classées), '45', ou '1' à '5'.
+function levelMatch(v, k) {
+  if (!k) return true;
+  if (k === 'none') return !v.rating;
+  if (k === '45') return v.rating >= 4;
+  return v.rating === +k;
+}
+
 function setLevel(id, lv) {
   const v = byId(id);
   if (!v) return;
@@ -246,6 +252,12 @@ function setLevel(id, lv) {
     li.classList.toggle('lvl1', lv === 1);
     const s = li.querySelector('.s');
     if (s) s.textContent = subline(v);
+    // Filtre de niveau actif (ex. « Non classées ») : la vidéo qui n'y correspond plus sort tout de suite de la liste.
+    // La file de lecture n'est pas touchée : la lecture continue normalement.
+    if (!levelMatch(v, $('levelFilter').value)) {
+      li.remove();
+      view = view.filter((x) => x.id !== id);
+    }
   }
   count();
 }
