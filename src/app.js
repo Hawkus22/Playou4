@@ -189,6 +189,16 @@ function play(v, autoplay = true, startAt = 0) {
   setNow(v);
   syncCur();
   document.querySelectorAll('.vlist li').forEach((li) => li.classList.toggle('playing', li.dataset.id === current));
+  revealCurrent();
+}
+
+// Garde la vidéo en cours visible dans la liste de la Bibliothèque : elle est centrée seulement si elle est hors de vue.
+function revealCurrent() {
+  const li = [...$('list').children].find((el) => el.dataset.id === current);
+  if (!li) return;
+  const r = li.getBoundingClientRect();
+  const c = $('list').getBoundingClientRect();
+  if (r.top < c.top || r.bottom > c.bottom) li.scrollIntoView({ block: 'center' });
 }
 
 // Cases du plein écran = état de la vidéo en cours.
